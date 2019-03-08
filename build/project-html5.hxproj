@@ -17,6 +17,12 @@
 	<classpaths>
 		<class path="/home/mixer/.haxe/libs/kha/16,1,2/Sources" />
 		<class path="/home/mixer/.haxe/libs/kha/16,1,2/Backends/HTML5" />
+		<class path="/home/mixer/.haxe/libs/ecs/git/src" />
+		<class path="/home/mixer/.haxe/libs/tink_macro/0,17,4/src" />
+		<class path="/home/mixer/.haxe/libs/tink_core/1,21,0/src" />
+		<class path="/home/mixer/.haxe/libs/tink_priority/0,1,4/src" />
+		<class path="/home/mixer/.haxe/libs/tink_state/0,10,1/src" />
+		<class path="/home/mixer/.haxe/libs/tink_core/1,21,0/src" />
 		<class path="../Sources" />
 	</classpaths>
 	<!-- Build options -->

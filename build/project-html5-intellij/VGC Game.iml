@@ -17,6 +17,12 @@
     <content url="file://$MODULE_DIR$/../..">
       <sourceFolder url="file:///home/mixer/.haxe/libs/kha/16,1,2/Sources" isTestSource="false" />
       <sourceFolder url="file:///home/mixer/.haxe/libs/kha/16,1,2/Backends/HTML5" isTestSource="false" />
+      <sourceFolder url="file:///home/mixer/.haxe/libs/ecs/git/src" isTestSource="false" />
+      <sourceFolder url="file:///home/mixer/.haxe/libs/tink_macro/0,17,4/src" isTestSource="false" />
+      <sourceFolder url="file:///home/mixer/.haxe/libs/tink_core/1,21,0/src" isTestSource="false" />
+      <sourceFolder url="file:///home/mixer/.haxe/libs/tink_priority/0,1,4/src" isTestSource="false" />
+      <sourceFolder url="file:///home/mixer/.haxe/libs/tink_state/0,10,1/src" isTestSource="false" />
+      <sourceFolder url="file:///home/mixer/.haxe/libs/tink_core/1,21,0/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/../../Sources" isTestSource="false" />
 
     </content>
