@@ -6,6 +6,7 @@
 -cp /home/mixer/.haxe/libs/tink_priority/0,1,4/src
 -cp /home/mixer/.haxe/libs/tink_state/0,10,1/src
 -cp /home/mixer/.haxe/libs/tink_core/1,21,0/src
+-cp /home/mixer/.haxe/libs/differ/git
 -cp ../Sources
 -D sys_html5
 -D sys_g1

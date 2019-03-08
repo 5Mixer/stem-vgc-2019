@@ -23,6 +23,7 @@
       <sourceFolder url="file:///home/mixer/.haxe/libs/tink_priority/0,1,4/src" isTestSource="false" />
       <sourceFolder url="file:///home/mixer/.haxe/libs/tink_state/0,10,1/src" isTestSource="false" />
       <sourceFolder url="file:///home/mixer/.haxe/libs/tink_core/1,21,0/src" isTestSource="false" />
+      <sourceFolder url="file:///home/mixer/.haxe/libs/differ/git" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/../../Sources" isTestSource="false" />
 
     </content>

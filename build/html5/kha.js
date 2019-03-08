@@ -37,15 +37,25 @@ var Game = function() {
 	kha_System.notifyOnRender($bind(this,this.render));
 	kha_Scheduler.addTimeTask($bind(this,this.update),0,0.0166666666666666664);
 	this.engine = new ecs_Engine();
-	var entity = new ecs_entity_Entity();
-	entity.add(new component_Position(0,0));
-	entity.add(new component_Physical(300,0));
-	entity.add(new component_RenderObject(kha__$Color_Color_$Impl_$.Blue));
-	this.engine.entities.schedule(entity,true);
+	var zone = new ecs_entity_Entity();
+	zone.add(new component_Position(40,100));
+	zone.add(new component_Shape(new differ_shapes_Polygon(0,0,[new differ_math_Vector(0,0),new differ_math_Vector(0,400),new differ_math_Vector(100,400)])));
+	zone.add(new component_ZonePolygon([new kha_math_Vector2(0,0),new kha_math_Vector2(0,400),new kha_math_Vector2(100,400)]));
+	var dot = new ecs_entity_Entity();
+	dot.add(new component_Position(0,0));
+	dot.add(new component_Physical(70,0));
+	dot.add(new component_Shape(new differ_shapes_Circle(0,0,5)));
+	dot.add(new component_RenderObject(kha__$Color_Color_$Impl_$.fromString("#2E79EE")));
+	this.engine.entities.schedule(zone,true);
+	this.engine.entities.schedule(dot,true);
+	this.zoneRenderSystem = new system_ZoneRenderSystem();
 	this.renderSystem = new system_ObjectRenderSystem();
-	this.engine.systems.add(this.renderSystem,null,{ fileName : "Game.hx", lineNumber : 29, className : "Game", methodName : "new"});
-	this.engine.systems.add(new system_PhysicsSystem(),null,{ fileName : "Game.hx", lineNumber : 30, className : "Game", methodName : "new"});
+	this.engine.systems.add(this.zoneRenderSystem,null,{ fileName : "Game.hx", lineNumber : 45, className : "Game", methodName : "new"});
+	this.engine.systems.add(this.renderSystem,null,{ fileName : "Game.hx", lineNumber : 46, className : "Game", methodName : "new"});
+	this.engine.systems.add(new system_PhysicsSystem(),null,{ fileName : "Game.hx", lineNumber : 47, className : "Game", methodName : "new"});
+	this.engine.systems.add(new system_ZoneBehaviourSystem(),null,{ fileName : "Game.hx", lineNumber : 48, className : "Game", methodName : "new"});
 	this.backbuffer = kha_Image.createRenderTarget(800,600);
+	this.zonefb = kha_Image.createRenderTarget(800,600);
 };
 $hxClasses["Game"] = Game;
 Game.__name__ = ["Game"];
@@ -55,8 +65,12 @@ Game.prototype = {
 	}
 	,render: function(framebuffer) {
 		var graphics = this.backbuffer.get_g2();
+		this.zonefb.get_g2().begin(true,kha__$Color_Color_$Impl_$.fromBytes(0,0,0,0));
+		this.zoneRenderSystem.rendergraphics(this.zonefb.get_g2());
+		this.zonefb.get_g2().end();
 		graphics.begin(true,kha__$Color_Color_$Impl_$.fromString("#E1E1DA"));
-		this.renderSystem.render(graphics);
+		graphics.drawImage(this.zonefb,0,0);
+		this.renderSystem.rendergraphics(graphics);
 		graphics.end();
 		framebuffer.get_g2().begin();
 		kha_Scaler.scale(this.backbuffer,framebuffer,kha_System.get_screenRotation());
@@ -385,8 +399,8 @@ ecs_component_Component.prototype = {
 	,__class__: ecs_component_Component
 };
 var component_Physical = function(x,y) {
-	this.gravity = new util_Vector(0,70);
-	this.velocity = new util_Vector(x,y);
+	this.gravity = new kha_math_Vector2(0,70);
+	this.velocity = new kha_math_Vector2(x,y);
 };
 $hxClasses["component.Physical"] = component_Physical;
 component_Physical.__name__ = ["component","Physical"];
@@ -395,7 +409,7 @@ component_Physical.prototype = $extend(ecs_component_Component.prototype,{
 	__class__: component_Physical
 });
 var component_Position = function(x,y) {
-	this.position = new util_Vector(x,y);
+	this.position = new kha_math_Vector2(x,y);
 };
 $hxClasses["component.Position"] = component_Position;
 component_Position.__name__ = ["component","Position"];
@@ -412,6 +426,1472 @@ component_RenderObject.__super__ = ecs_component_Component;
 component_RenderObject.prototype = $extend(ecs_component_Component.prototype,{
 	__class__: component_RenderObject
 });
+var component_Shape = function(shape) {
+	this.vertices = [];
+	this.shape = shape;
+};
+$hxClasses["component.Shape"] = component_Shape;
+component_Shape.__name__ = ["component","Shape"];
+component_Shape.__super__ = ecs_component_Component;
+component_Shape.prototype = $extend(ecs_component_Component.prototype,{
+	__class__: component_Shape
+});
+var component_ZonePolygon = function(vertices) {
+	this.vertices = [];
+	this.permanentEffects = [];
+	this.temporaryEffects = [];
+	this.vertices = vertices;
+	this.colour = kha__$Color_Color_$Impl_$.fromString("#DD6E6E");
+	this.temporaryEffects.push(game_Property.Antigravity);
+};
+$hxClasses["component.ZonePolygon"] = component_ZonePolygon;
+component_ZonePolygon.__name__ = ["component","ZonePolygon"];
+component_ZonePolygon.__super__ = ecs_component_Component;
+component_ZonePolygon.prototype = $extend(ecs_component_Component.prototype,{
+	__class__: component_ZonePolygon
+});
+var differ_Collision = function() { };
+$hxClasses["differ.Collision"] = differ_Collision;
+differ_Collision.__name__ = ["differ","Collision"];
+differ_Collision.shapeWithShape = function(shape1,shape2,into) {
+	return shape1.test(shape2,into);
+};
+differ_Collision.shapeWithShapes = function(shape1,shapes,into) {
+	var results;
+	if(into != null) {
+		into.count = 0;
+		results = into;
+	} else {
+		results = new differ_Results_$differ_$data_$ShapeCollision(shapes.length);
+	}
+	var _g = 0;
+	while(_g < shapes.length) {
+		var other_shape = shapes[_g];
+		++_g;
+		if(results.items.length == results.count) {
+			results.items.push(new differ_data_ShapeCollision());
+		}
+		var value = results.items[results.count];
+		var result = shape1.test(other_shape,value);
+		if(result != null) {
+			results.items[results.count] = result;
+			results.count++;
+		}
+	}
+	return results;
+};
+differ_Collision.rayWithShape = function(ray,shape,into) {
+	return shape.testRay(ray,into);
+};
+differ_Collision.rayWithShapes = function(ray,shapes,into) {
+	var results;
+	if(into != null) {
+		into.count = 0;
+		results = into;
+	} else {
+		results = new differ_Results_$differ_$data_$RayCollision(shapes.length);
+	}
+	var _g = 0;
+	while(_g < shapes.length) {
+		var shape = shapes[_g];
+		++_g;
+		if(results.items.length == results.count) {
+			results.items.push(new differ_data_RayCollision());
+		}
+		var value = results.items[results.count];
+		var result = shape.testRay(ray,value);
+		if(result != null) {
+			results.items[results.count] = result;
+			results.count++;
+		}
+	}
+	return results;
+};
+differ_Collision.rayWithRay = function(ray1,ray2,into) {
+	return differ_sat_SAT2D.testRayVsRay(ray1,ray2,into);
+};
+differ_Collision.rayWithRays = function(ray,rays,into) {
+	var results;
+	if(into != null) {
+		into.count = 0;
+		results = into;
+	} else {
+		results = new differ_Results_$differ_$data_$RayIntersection(rays.length);
+	}
+	var _g = 0;
+	while(_g < rays.length) {
+		var other = rays[_g];
+		++_g;
+		if(results.items.length == results.count) {
+			results.items.push(new differ_data_RayIntersection());
+		}
+		var value = results.items[results.count];
+		var result = differ_sat_SAT2D.testRayVsRay(ray,other,value);
+		if(result != null) {
+			results.items[results.count] = result;
+			results.count++;
+		}
+	}
+	return results;
+};
+differ_Collision.pointInPoly = function(x,y,poly) {
+	var sides = poly.get_transformedVertices().length;
+	var verts = poly.get_transformedVertices();
+	var i = 0;
+	var j = sides - 1;
+	var oddNodes = false;
+	var _g1 = 0;
+	var _g = sides;
+	while(_g1 < _g) {
+		var i1 = _g1++;
+		if(verts[i1].y < y && verts[j].y >= y || verts[j].y < y && verts[i1].y >= y) {
+			if(verts[i1].x + (y - verts[i1].y) / (verts[j].y - verts[i1].y) * (verts[j].x - verts[i1].x) < x) {
+				oddNodes = !oddNodes;
+			}
+		}
+		j = i1;
+	}
+	return oddNodes;
+};
+var differ_ResultsIterator_$differ_$data_$RayCollision = function(_results) {
+	this.index = 0;
+	this.index = 0;
+	this.results = _results;
+};
+$hxClasses["differ.ResultsIterator_differ_data_RayCollision"] = differ_ResultsIterator_$differ_$data_$RayCollision;
+differ_ResultsIterator_$differ_$data_$RayCollision.__name__ = ["differ","ResultsIterator_differ_data_RayCollision"];
+differ_ResultsIterator_$differ_$data_$RayCollision.prototype = {
+	hasNext: function() {
+		return this.index < this.results.count;
+	}
+	,next: function() {
+		var _this = this.results;
+		var index = this.index++;
+		if(index < 0 && index > _this.count - 1) {
+			return null;
+		} else {
+			return _this.items[index];
+		}
+	}
+	,__class__: differ_ResultsIterator_$differ_$data_$RayCollision
+};
+var differ_ResultsIterator_$differ_$data_$RayIntersection = function(_results) {
+	this.index = 0;
+	this.index = 0;
+	this.results = _results;
+};
+$hxClasses["differ.ResultsIterator_differ_data_RayIntersection"] = differ_ResultsIterator_$differ_$data_$RayIntersection;
+differ_ResultsIterator_$differ_$data_$RayIntersection.__name__ = ["differ","ResultsIterator_differ_data_RayIntersection"];
+differ_ResultsIterator_$differ_$data_$RayIntersection.prototype = {
+	hasNext: function() {
+		return this.index < this.results.count;
+	}
+	,next: function() {
+		var _this = this.results;
+		var index = this.index++;
+		if(index < 0 && index > _this.count - 1) {
+			return null;
+		} else {
+			return _this.items[index];
+		}
+	}
+	,__class__: differ_ResultsIterator_$differ_$data_$RayIntersection
+};
+var differ_ResultsIterator_$differ_$data_$ShapeCollision = function(_results) {
+	this.index = 0;
+	this.index = 0;
+	this.results = _results;
+};
+$hxClasses["differ.ResultsIterator_differ_data_ShapeCollision"] = differ_ResultsIterator_$differ_$data_$ShapeCollision;
+differ_ResultsIterator_$differ_$data_$ShapeCollision.__name__ = ["differ","ResultsIterator_differ_data_ShapeCollision"];
+differ_ResultsIterator_$differ_$data_$ShapeCollision.prototype = {
+	hasNext: function() {
+		return this.index < this.results.count;
+	}
+	,next: function() {
+		var _this = this.results;
+		var index = this.index++;
+		if(index < 0 && index > _this.count - 1) {
+			return null;
+		} else {
+			return _this.items[index];
+		}
+	}
+	,__class__: differ_ResultsIterator_$differ_$data_$ShapeCollision
+};
+var differ_Results_$differ_$data_$RayCollision = function(size) {
+	this.count = 0;
+	var _g = [];
+	var _g2 = 0;
+	var _g1 = size;
+	while(_g2 < _g1) {
+		var i = _g2++;
+		_g.push(new differ_data_RayCollision());
+	}
+	this.items = _g;
+};
+$hxClasses["differ.Results_differ_data_RayCollision"] = differ_Results_$differ_$data_$RayCollision;
+differ_Results_$differ_$data_$RayCollision.__name__ = ["differ","Results_differ_data_RayCollision"];
+differ_Results_$differ_$data_$RayCollision.prototype = {
+	push: function(value) {
+		this.items[this.count] = value;
+		this.count++;
+	}
+	,get: function(index) {
+		if(index < 0 && index > this.count - 1) {
+			return null;
+		}
+		return this.items[index];
+	}
+	,pull: function() {
+		if(this.items.length == this.count) {
+			this.items.push(new differ_data_RayCollision());
+		}
+		return this.items[this.count];
+	}
+	,clear: function() {
+		this.count = 0;
+		return this;
+	}
+	,iterator: function() {
+		return new differ_ResultsIterator_$differ_$data_$RayCollision(this);
+	}
+	,get_length: function() {
+		return this.count;
+	}
+	,get_total: function() {
+		return this.items.length;
+	}
+	,__class__: differ_Results_$differ_$data_$RayCollision
+};
+var differ_Results_$differ_$data_$RayIntersection = function(size) {
+	this.count = 0;
+	var _g = [];
+	var _g2 = 0;
+	var _g1 = size;
+	while(_g2 < _g1) {
+		var i = _g2++;
+		_g.push(new differ_data_RayIntersection());
+	}
+	this.items = _g;
+};
+$hxClasses["differ.Results_differ_data_RayIntersection"] = differ_Results_$differ_$data_$RayIntersection;
+differ_Results_$differ_$data_$RayIntersection.__name__ = ["differ","Results_differ_data_RayIntersection"];
+differ_Results_$differ_$data_$RayIntersection.prototype = {
+	push: function(value) {
+		this.items[this.count] = value;
+		this.count++;
+	}
+	,get: function(index) {
+		if(index < 0 && index > this.count - 1) {
+			return null;
+		}
+		return this.items[index];
+	}
+	,pull: function() {
+		if(this.items.length == this.count) {
+			this.items.push(new differ_data_RayIntersection());
+		}
+		return this.items[this.count];
+	}
+	,clear: function() {
+		this.count = 0;
+		return this;
+	}
+	,iterator: function() {
+		return new differ_ResultsIterator_$differ_$data_$RayIntersection(this);
+	}
+	,get_length: function() {
+		return this.count;
+	}
+	,get_total: function() {
+		return this.items.length;
+	}
+	,__class__: differ_Results_$differ_$data_$RayIntersection
+};
+var differ_Results_$differ_$data_$ShapeCollision = function(size) {
+	this.count = 0;
+	var _g = [];
+	var _g2 = 0;
+	var _g1 = size;
+	while(_g2 < _g1) {
+		var i = _g2++;
+		_g.push(new differ_data_ShapeCollision());
+	}
+	this.items = _g;
+};
+$hxClasses["differ.Results_differ_data_ShapeCollision"] = differ_Results_$differ_$data_$ShapeCollision;
+differ_Results_$differ_$data_$ShapeCollision.__name__ = ["differ","Results_differ_data_ShapeCollision"];
+differ_Results_$differ_$data_$ShapeCollision.prototype = {
+	push: function(value) {
+		this.items[this.count] = value;
+		this.count++;
+	}
+	,get: function(index) {
+		if(index < 0 && index > this.count - 1) {
+			return null;
+		}
+		return this.items[index];
+	}
+	,pull: function() {
+		if(this.items.length == this.count) {
+			this.items.push(new differ_data_ShapeCollision());
+		}
+		return this.items[this.count];
+	}
+	,clear: function() {
+		this.count = 0;
+		return this;
+	}
+	,iterator: function() {
+		return new differ_ResultsIterator_$differ_$data_$ShapeCollision(this);
+	}
+	,get_length: function() {
+		return this.count;
+	}
+	,get_total: function() {
+		return this.items.length;
+	}
+	,__class__: differ_Results_$differ_$data_$ShapeCollision
+};
+var differ_data_RayCollision = function() {
+	this.end = 0.0;
+	this.start = 0.0;
+};
+$hxClasses["differ.data.RayCollision"] = differ_data_RayCollision;
+differ_data_RayCollision.__name__ = ["differ","data","RayCollision"];
+differ_data_RayCollision.prototype = {
+	reset: function() {
+		this.ray = null;
+		this.shape = null;
+		this.start = 0.0;
+		this.end = 0.0;
+		return this;
+	}
+	,copy_from: function(other) {
+		this.ray = other.ray;
+		this.shape = other.shape;
+		this.start = other.start;
+		this.end = other.end;
+	}
+	,clone: function() {
+		var _clone = new differ_data_RayCollision();
+		_clone.ray = this.ray;
+		_clone.shape = this.shape;
+		_clone.start = this.start;
+		_clone.end = this.end;
+		return _clone;
+	}
+	,__class__: differ_data_RayCollision
+};
+var differ_data_RayCollisionHelper = function() { };
+$hxClasses["differ.data.RayCollisionHelper"] = differ_data_RayCollisionHelper;
+differ_data_RayCollisionHelper.__name__ = ["differ","data","RayCollisionHelper"];
+differ_data_RayCollisionHelper.hitStartX = function(data) {
+	return data.ray.start.x + data.ray.get_dir().x * data.start;
+};
+differ_data_RayCollisionHelper.hitStartY = function(data) {
+	return data.ray.start.y + data.ray.get_dir().y * data.start;
+};
+differ_data_RayCollisionHelper.hitEndX = function(data) {
+	return data.ray.start.x + data.ray.get_dir().x * data.end;
+};
+differ_data_RayCollisionHelper.hitEndY = function(data) {
+	return data.ray.start.y + data.ray.get_dir().y * data.end;
+};
+var differ_data_RayIntersection = function() {
+	this.u2 = 0.0;
+	this.u1 = 0.0;
+};
+$hxClasses["differ.data.RayIntersection"] = differ_data_RayIntersection;
+differ_data_RayIntersection.__name__ = ["differ","data","RayIntersection"];
+differ_data_RayIntersection.prototype = {
+	reset: function() {
+		this.ray1 = null;
+		this.ray2 = null;
+		this.u1 = 0.0;
+		this.u2 = 0.0;
+		return this;
+	}
+	,copy_from: function(other) {
+		this.ray1 = other.ray1;
+		this.ray2 = other.ray2;
+		this.u1 = other.u1;
+		this.u2 = other.u2;
+	}
+	,clone: function() {
+		var _clone = new differ_data_RayIntersection();
+		_clone.ray1 = this.ray1;
+		_clone.ray2 = this.ray2;
+		_clone.u1 = this.u1;
+		_clone.u2 = this.u2;
+		return _clone;
+	}
+	,__class__: differ_data_RayIntersection
+};
+var differ_data_ShapeCollision = function() {
+	this.otherUnitVectorY = 0.0;
+	this.otherUnitVectorX = 0.0;
+	this.otherSeparationY = 0.0;
+	this.otherSeparationX = 0.0;
+	this.otherOverlap = 0.0;
+	this.unitVectorY = 0.0;
+	this.unitVectorX = 0.0;
+	this.separationY = 0.0;
+	this.separationX = 0.0;
+	this.overlap = 0.0;
+};
+$hxClasses["differ.data.ShapeCollision"] = differ_data_ShapeCollision;
+differ_data_ShapeCollision.__name__ = ["differ","data","ShapeCollision"];
+differ_data_ShapeCollision.prototype = {
+	reset: function() {
+		this.shape1 = this.shape2 = null;
+		this.overlap = this.separationX = this.separationY = this.unitVectorX = this.unitVectorY = 0.0;
+		this.otherOverlap = this.otherSeparationX = this.otherSeparationY = this.otherUnitVectorX = this.otherUnitVectorY = 0.0;
+		return this;
+	}
+	,clone: function() {
+		var _clone = new differ_data_ShapeCollision();
+		_clone.overlap = this.overlap;
+		_clone.separationX = this.separationX;
+		_clone.separationY = this.separationY;
+		_clone.unitVectorX = this.unitVectorX;
+		_clone.unitVectorY = this.unitVectorY;
+		_clone.otherOverlap = this.otherOverlap;
+		_clone.otherSeparationX = this.otherSeparationX;
+		_clone.otherSeparationY = this.otherSeparationY;
+		_clone.otherUnitVectorX = this.otherUnitVectorX;
+		_clone.otherUnitVectorY = this.otherUnitVectorY;
+		_clone.shape1 = this.shape1;
+		_clone.shape2 = this.shape2;
+		return _clone;
+	}
+	,copy_from: function(_other) {
+		this.overlap = _other.overlap;
+		this.separationX = _other.separationX;
+		this.separationY = _other.separationY;
+		this.unitVectorX = _other.unitVectorX;
+		this.unitVectorY = _other.unitVectorY;
+		this.otherOverlap = _other.otherOverlap;
+		this.otherSeparationX = _other.otherSeparationX;
+		this.otherSeparationY = _other.otherSeparationY;
+		this.otherUnitVectorX = _other.otherUnitVectorX;
+		this.otherUnitVectorY = _other.otherUnitVectorY;
+		this.shape1 = _other.shape1;
+		this.shape2 = _other.shape2;
+	}
+	,__class__: differ_data_ShapeCollision
+};
+var differ_math_Matrix = function(a,b,c,d,tx,ty) {
+	if(ty == null) {
+		ty = 0;
+	}
+	if(tx == null) {
+		tx = 0;
+	}
+	if(d == null) {
+		d = 1;
+	}
+	if(c == null) {
+		c = 0;
+	}
+	if(b == null) {
+		b = 0;
+	}
+	if(a == null) {
+		a = 1;
+	}
+	this._last_rotation = 0;
+	this.a = a;
+	this.b = b;
+	this.c = c;
+	this.d = d;
+	this.tx = tx;
+	this.ty = ty;
+};
+$hxClasses["differ.math.Matrix"] = differ_math_Matrix;
+differ_math_Matrix.__name__ = ["differ","math","Matrix"];
+differ_math_Matrix.prototype = {
+	identity: function() {
+		this.a = 1;
+		this.b = 0;
+		this.c = 0;
+		this.d = 1;
+		this.tx = 0;
+		this.ty = 0;
+	}
+	,translate: function(x,y) {
+		this.tx += x;
+		this.ty += y;
+	}
+	,compose: function(_position,_rotation,_scale) {
+		this.identity();
+		this.scale(_scale.x,_scale.y);
+		this.rotate(_rotation);
+		this.makeTranslation(_position.x,_position.y);
+	}
+	,makeTranslation: function(_x,_y) {
+		this.tx = _x;
+		this.ty = _y;
+		return this;
+	}
+	,rotate: function(angle) {
+		var cos = Math.cos(angle);
+		var sin = Math.sin(angle);
+		var a1 = this.a * cos - this.b * sin;
+		this.b = this.a * sin + this.b * cos;
+		this.a = a1;
+		var c1 = this.c * cos - this.d * sin;
+		this.d = this.c * sin + this.d * cos;
+		this.c = c1;
+		var tx1 = this.tx * cos - this.ty * sin;
+		this.ty = this.tx * sin + this.ty * cos;
+		this.tx = tx1;
+	}
+	,scale: function(x,y) {
+		this.a *= x;
+		this.b *= y;
+		this.c *= x;
+		this.d *= y;
+		this.tx *= x;
+		this.ty *= y;
+	}
+	,toString: function() {
+		return "(a=" + this.a + ", b=" + this.b + ", c=" + this.c + ", d=" + this.d + ", tx=" + this.tx + ", ty=" + this.ty + ")";
+	}
+	,__class__: differ_math_Matrix
+};
+var differ_math_Util = function() { };
+$hxClasses["differ.math.Util"] = differ_math_Util;
+differ_math_Util.__name__ = ["differ","math","Util"];
+differ_math_Util.vec_lengthsq = function(x,y) {
+	return x * x + y * y;
+};
+differ_math_Util.vec_length = function(x,y) {
+	return Math.sqrt(x * x + y * y);
+};
+differ_math_Util.vec_normalize = function(length,component) {
+	if(length == 0) {
+		return 0;
+	}
+	component /= length;
+	return component;
+};
+differ_math_Util.vec_dot = function(x,y,otherx,othery) {
+	return x * otherx + y * othery;
+};
+var differ_math_Vector = function(_x,_y) {
+	if(_y == null) {
+		_y = 0;
+	}
+	if(_x == null) {
+		_x = 0;
+	}
+	this.y = 0;
+	this.x = 0;
+	this.x = _x;
+	this.y = _y;
+};
+$hxClasses["differ.math.Vector"] = differ_math_Vector;
+differ_math_Vector.__name__ = ["differ","math","Vector"];
+differ_math_Vector.prototype = {
+	clone: function() {
+		return new differ_math_Vector(this.x,this.y);
+	}
+	,transform: function(matrix) {
+		var v = new differ_math_Vector(this.x,this.y);
+		v.x = this.x * matrix.a + this.y * matrix.c + matrix.tx;
+		v.y = this.x * matrix.b + this.y * matrix.d + matrix.ty;
+		return v;
+	}
+	,normalize: function() {
+		if(Math.sqrt(this.x * this.x + this.y * this.y) == 0) {
+			this.x = 1;
+			return this;
+		}
+		var len = Math.sqrt(this.x * this.x + this.y * this.y);
+		this.x /= len;
+		this.y /= len;
+		return this;
+	}
+	,truncate: function(max) {
+		var value = Math.min(max,Math.sqrt(this.x * this.x + this.y * this.y));
+		var ep = 0.00000001;
+		var _angle = Math.atan2(this.y,this.x);
+		this.x = Math.cos(_angle) * value;
+		this.y = Math.sin(_angle) * value;
+		if(Math.abs(this.x) < ep) {
+			this.x = 0;
+		}
+		if(Math.abs(this.y) < ep) {
+			this.y = 0;
+		}
+		return this;
+	}
+	,invert: function() {
+		this.x = -this.x;
+		this.y = -this.y;
+		return this;
+	}
+	,dot: function(other) {
+		return this.x * other.x + this.y * other.y;
+	}
+	,cross: function(other) {
+		return this.x * other.y - this.y * other.x;
+	}
+	,add: function(other) {
+		this.x += other.x;
+		this.y += other.y;
+		return this;
+	}
+	,subtract: function(other) {
+		this.x -= other.x;
+		this.y -= other.y;
+		return this;
+	}
+	,toString: function() {
+		return "Vector x:" + this.x + ", y:" + this.y;
+	}
+	,set_length: function(value) {
+		var ep = 0.00000001;
+		var _angle = Math.atan2(this.y,this.x);
+		this.x = Math.cos(_angle) * value;
+		this.y = Math.sin(_angle) * value;
+		if(Math.abs(this.x) < ep) {
+			this.x = 0;
+		}
+		if(Math.abs(this.y) < ep) {
+			this.y = 0;
+		}
+		return value;
+	}
+	,get_length: function() {
+		return Math.sqrt(this.x * this.x + this.y * this.y);
+	}
+	,get_lengthsq: function() {
+		return this.x * this.x + this.y * this.y;
+	}
+	,__class__: differ_math_Vector
+};
+var differ_sat_SAT2D = function() { };
+$hxClasses["differ.sat.SAT2D"] = differ_sat_SAT2D;
+differ_sat_SAT2D.__name__ = ["differ","sat","SAT2D"];
+differ_sat_SAT2D.testCircleVsPolygon = function(circle,polygon,into,flip) {
+	if(flip == null) {
+		flip = false;
+	}
+	if(into == null) {
+		into = new differ_data_ShapeCollision();
+	} else {
+		into.shape1 = into.shape2 = null;
+		into.overlap = into.separationX = into.separationY = into.unitVectorX = into.unitVectorY = 0.0;
+		into.otherOverlap = into.otherSeparationX = into.otherSeparationY = into.otherUnitVectorX = into.otherUnitVectorY = 0.0;
+		into = into;
+	}
+	var verts = polygon.get_transformedVertices();
+	var circleX = circle.get_x();
+	var circleY = circle.get_y();
+	var testDistance = 1073741823;
+	var distance = 0.0;
+	var closestX = 0.0;
+	var closestY = 0.0;
+	var _g1 = 0;
+	var _g = verts.length;
+	while(_g1 < _g) {
+		var i = _g1++;
+		var x = circleX - verts[i].x;
+		var y = circleY - verts[i].y;
+		distance = x * x + y * y;
+		if(distance < testDistance) {
+			testDistance = distance;
+			closestX = verts[i].x;
+			closestY = verts[i].y;
+		}
+	}
+	var normalAxisX = closestX - circleX;
+	var normalAxisY = closestY - circleY;
+	var normAxisLen = Math.sqrt(normalAxisX * normalAxisX + normalAxisY * normalAxisY);
+	var component = normalAxisX;
+	if(normAxisLen == 0) {
+		normalAxisX = 0;
+	} else {
+		component /= normAxisLen;
+		normalAxisX = component;
+	}
+	var component1 = normalAxisY;
+	if(normAxisLen == 0) {
+		normalAxisY = 0;
+	} else {
+		component1 /= normAxisLen;
+		normalAxisY = component1;
+	}
+	var test = 0.0;
+	var min1 = normalAxisX * verts[0].x + normalAxisY * verts[0].y;
+	var max1 = min1;
+	var _g11 = 1;
+	var _g2 = verts.length;
+	while(_g11 < _g2) {
+		var j = _g11++;
+		test = normalAxisX * verts[j].x + normalAxisY * verts[j].y;
+		if(test < min1) {
+			min1 = test;
+		}
+		if(test > max1) {
+			max1 = test;
+		}
+	}
+	var max2 = circle.get_transformedRadius();
+	var min2 = -circle.get_transformedRadius();
+	var offset = normalAxisX * -circleX + normalAxisY * -circleY;
+	min1 += offset;
+	max1 += offset;
+	var test1 = min1 - max2;
+	var test2 = min2 - max1;
+	if(test1 > 0 || test2 > 0) {
+		return null;
+	}
+	var distMin = -(max2 - min1);
+	if(flip) {
+		distMin *= -1;
+	}
+	into.overlap = distMin;
+	into.unitVectorX = normalAxisX;
+	into.unitVectorY = normalAxisY;
+	var closest = Math.abs(distMin);
+	var _g12 = 0;
+	var _g3 = verts.length;
+	while(_g12 < _g3) {
+		var i1 = _g12++;
+		var v2 = i1 >= verts.length - 1 ? verts[0] : verts[i1 + 1];
+		normalAxisX = -(v2.y - verts[i1].y);
+		var v21 = i1 >= verts.length - 1 ? verts[0] : verts[i1 + 1];
+		normalAxisY = v21.x - verts[i1].x;
+		var aLen = Math.sqrt(normalAxisX * normalAxisX + normalAxisY * normalAxisY);
+		var component2 = normalAxisX;
+		if(aLen == 0) {
+			normalAxisX = 0;
+		} else {
+			component2 /= aLen;
+			normalAxisX = component2;
+		}
+		var component3 = normalAxisY;
+		if(aLen == 0) {
+			normalAxisY = 0;
+		} else {
+			component3 /= aLen;
+			normalAxisY = component3;
+		}
+		min1 = normalAxisX * verts[0].x + normalAxisY * verts[0].y;
+		max1 = min1;
+		var _g31 = 1;
+		var _g21 = verts.length;
+		while(_g31 < _g21) {
+			var j1 = _g31++;
+			test = normalAxisX * verts[j1].x + normalAxisY * verts[j1].y;
+			if(test < min1) {
+				min1 = test;
+			}
+			if(test > max1) {
+				max1 = test;
+			}
+		}
+		max2 = circle.get_transformedRadius();
+		min2 = -circle.get_transformedRadius();
+		offset = normalAxisX * -circleX + normalAxisY * -circleY;
+		min1 += offset;
+		max1 += offset;
+		test1 = min1 - max2;
+		test2 = min2 - max1;
+		if(test1 > 0 || test2 > 0) {
+			return null;
+		}
+		distMin = -(max2 - min1);
+		if(flip) {
+			distMin *= -1;
+		}
+		if(Math.abs(distMin) < closest) {
+			into.unitVectorX = normalAxisX;
+			into.unitVectorY = normalAxisY;
+			into.overlap = distMin;
+			closest = Math.abs(distMin);
+		}
+	}
+	into.shape1 = flip ? polygon : circle;
+	into.shape2 = flip ? circle : polygon;
+	into.separationX = into.unitVectorX * into.overlap;
+	into.separationY = into.unitVectorY * into.overlap;
+	if(!flip) {
+		into.unitVectorX = -into.unitVectorX;
+		into.unitVectorY = -into.unitVectorY;
+	}
+	return into;
+};
+differ_sat_SAT2D.testCircleVsCircle = function(circleA,circleB,into,flip) {
+	if(flip == null) {
+		flip = false;
+	}
+	var circle1 = flip ? circleB : circleA;
+	var circle2 = flip ? circleA : circleB;
+	var totalRadius = circle1.get_transformedRadius() + circle2.get_transformedRadius();
+	var x = circle1.get_x() - circle2.get_x();
+	var y = circle1.get_y() - circle2.get_y();
+	var distancesq = x * x + y * y;
+	if(distancesq < totalRadius * totalRadius) {
+		if(into == null) {
+			into = new differ_data_ShapeCollision();
+		} else {
+			into.shape1 = into.shape2 = null;
+			into.overlap = into.separationX = into.separationY = into.unitVectorX = into.unitVectorY = 0.0;
+			into.otherOverlap = into.otherSeparationX = into.otherSeparationY = into.otherUnitVectorX = into.otherUnitVectorY = 0.0;
+			into = into;
+		}
+		var difference = totalRadius - Math.sqrt(distancesq);
+		into.shape1 = circle1;
+		into.shape2 = circle2;
+		var unitVecX = circle1.get_x() - circle2.get_x();
+		var unitVecY = circle1.get_y() - circle2.get_y();
+		var unitVecLen = Math.sqrt(unitVecX * unitVecX + unitVecY * unitVecY);
+		var component = unitVecX;
+		if(unitVecLen == 0) {
+			unitVecX = 0;
+		} else {
+			component /= unitVecLen;
+			unitVecX = component;
+		}
+		var component1 = unitVecY;
+		if(unitVecLen == 0) {
+			unitVecY = 0;
+		} else {
+			component1 /= unitVecLen;
+			unitVecY = component1;
+		}
+		into.unitVectorX = unitVecX;
+		into.unitVectorY = unitVecY;
+		into.separationX = into.unitVectorX * difference;
+		into.separationY = into.unitVectorY * difference;
+		into.overlap = difference;
+		return into;
+	}
+	return null;
+};
+differ_sat_SAT2D.testPolygonVsPolygon = function(polygon1,polygon2,into,flip) {
+	if(flip == null) {
+		flip = false;
+	}
+	if(into == null) {
+		into = new differ_data_ShapeCollision();
+	} else {
+		into.shape1 = into.shape2 = null;
+		into.overlap = into.separationX = into.separationY = into.unitVectorX = into.unitVectorY = 0.0;
+		into.otherOverlap = into.otherSeparationX = into.otherSeparationY = into.otherUnitVectorX = into.otherUnitVectorY = 0.0;
+		into = into;
+	}
+	if(differ_sat_SAT2D.checkPolygons(polygon1,polygon2,differ_sat_SAT2D.tmp1,flip) == null) {
+		return null;
+	}
+	if(differ_sat_SAT2D.checkPolygons(polygon2,polygon1,differ_sat_SAT2D.tmp2,!flip) == null) {
+		return null;
+	}
+	var result = null;
+	var other = null;
+	if(Math.abs(differ_sat_SAT2D.tmp1.overlap) < Math.abs(differ_sat_SAT2D.tmp2.overlap)) {
+		result = differ_sat_SAT2D.tmp1;
+		other = differ_sat_SAT2D.tmp2;
+	} else {
+		result = differ_sat_SAT2D.tmp2;
+		other = differ_sat_SAT2D.tmp1;
+	}
+	result.otherOverlap = other.overlap;
+	result.otherSeparationX = other.separationX;
+	result.otherSeparationY = other.separationY;
+	result.otherUnitVectorX = other.unitVectorX;
+	result.otherUnitVectorY = other.unitVectorY;
+	into.overlap = result.overlap;
+	into.separationX = result.separationX;
+	into.separationY = result.separationY;
+	into.unitVectorX = result.unitVectorX;
+	into.unitVectorY = result.unitVectorY;
+	into.otherOverlap = result.otherOverlap;
+	into.otherSeparationX = result.otherSeparationX;
+	into.otherSeparationY = result.otherSeparationY;
+	into.otherUnitVectorX = result.otherUnitVectorX;
+	into.otherUnitVectorY = result.otherUnitVectorY;
+	into.shape1 = result.shape1;
+	into.shape2 = result.shape2;
+	other = null;
+	result = other;
+	return into;
+};
+differ_sat_SAT2D.testRayVsCircle = function(ray,circle,into) {
+	var deltaX = ray.end.x - ray.start.x;
+	var deltaY = ray.end.y - ray.start.y;
+	var ray2circleX = ray.start.x - circle.get_position().x;
+	var ray2circleY = ray.start.y - circle.get_position().y;
+	var a = deltaX * deltaX + deltaY * deltaY;
+	var b = 2 * (deltaX * ray2circleX + deltaY * ray2circleY);
+	var c = ray2circleX * ray2circleX + ray2circleY * ray2circleY - circle.get_radius() * circle.get_radius();
+	var d = b * b - 4 * a * c;
+	if(d >= 0) {
+		d = Math.sqrt(d);
+		var t1 = (-b - d) / (2 * a);
+		var t2 = (-b + d) / (2 * a);
+		var valid;
+		var _g = ray.infinite;
+		switch(_g[1]) {
+		case 0:
+			if(t1 >= 0.0) {
+				valid = t1 <= 1.0;
+			} else {
+				valid = false;
+			}
+			break;
+		case 1:
+			valid = t1 >= 0.0;
+			break;
+		case 2:
+			valid = true;
+			break;
+		}
+		if(valid) {
+			if(into == null) {
+				into = new differ_data_RayCollision();
+			} else {
+				into.ray = null;
+				into.shape = null;
+				into.start = 0.0;
+				into.end = 0.0;
+				into = into;
+			}
+			into.shape = circle;
+			into.ray = ray;
+			into.start = t1;
+			into.end = t2;
+			return into;
+		}
+	}
+	return null;
+};
+differ_sat_SAT2D.testRayVsPolygon = function(ray,polygon,into) {
+	var min_u = Infinity;
+	var max_u = -Infinity;
+	var startX = ray.start.x;
+	var startY = ray.start.y;
+	var deltaX = ray.end.x - startX;
+	var deltaY = ray.end.y - startY;
+	var verts = polygon.get_transformedVertices();
+	var v1 = verts[verts.length - 1];
+	var v2 = verts[0];
+	var ud = (v2.y - v1.y) * deltaX - (v2.x - v1.x) * deltaY;
+	var ua = ((v2.x - v1.x) * (startY - v1.y) - (v2.y - v1.y) * (startX - v1.x)) / ud;
+	var ub = (deltaX * (startY - v1.y) - deltaY * (startX - v1.x)) / ud;
+	if(ud != 0.0 && ub >= 0.0 && ub <= 1.0) {
+		if(ua < min_u) {
+			min_u = ua;
+		}
+		if(ua > max_u) {
+			max_u = ua;
+		}
+	}
+	var _g1 = 1;
+	var _g = verts.length;
+	while(_g1 < _g) {
+		var i = _g1++;
+		v1 = verts[i - 1];
+		v2 = verts[i];
+		ud = (v2.y - v1.y) * deltaX - (v2.x - v1.x) * deltaY;
+		ua = ((v2.x - v1.x) * (startY - v1.y) - (v2.y - v1.y) * (startX - v1.x)) / ud;
+		ub = (deltaX * (startY - v1.y) - deltaY * (startX - v1.x)) / ud;
+		if(ud != 0.0 && ub >= 0.0 && ub <= 1.0) {
+			if(ua < min_u) {
+				min_u = ua;
+			}
+			if(ua > max_u) {
+				max_u = ua;
+			}
+		}
+	}
+	var valid;
+	var _g2 = ray.infinite;
+	switch(_g2[1]) {
+	case 0:
+		if(min_u >= 0.0) {
+			valid = min_u <= 1.0;
+		} else {
+			valid = false;
+		}
+		break;
+	case 1:
+		if(min_u != Infinity) {
+			valid = min_u >= 0.0;
+		} else {
+			valid = false;
+		}
+		break;
+	case 2:
+		valid = min_u != Infinity;
+		break;
+	}
+	if(valid) {
+		if(into == null) {
+			into = new differ_data_RayCollision();
+		} else {
+			into.ray = null;
+			into.shape = null;
+			into.start = 0.0;
+			into.end = 0.0;
+			into = into;
+		}
+		into.shape = polygon;
+		into.ray = ray;
+		into.start = min_u;
+		into.end = max_u;
+		return into;
+	}
+	return null;
+};
+differ_sat_SAT2D.testRayVsRay = function(ray1,ray2,into) {
+	var delta1X = ray1.end.x - ray1.start.x;
+	var delta1Y = ray1.end.y - ray1.start.y;
+	var delta2X = ray2.end.x - ray2.start.x;
+	var delta2Y = ray2.end.y - ray2.start.y;
+	var diffX = ray1.start.x - ray2.start.x;
+	var diffY = ray1.start.y - ray2.start.y;
+	var ud = delta2Y * delta1X - delta2X * delta1Y;
+	if(ud == 0.0) {
+		return null;
+	}
+	var u1 = (delta2X * diffY - delta2Y * diffX) / ud;
+	var u2 = (delta1X * diffY - delta1Y * diffX) / ud;
+	var valid1;
+	var _g = ray1.infinite;
+	switch(_g[1]) {
+	case 0:
+		if(u1 > 0.0) {
+			valid1 = u1 <= 1.0;
+		} else {
+			valid1 = false;
+		}
+		break;
+	case 1:
+		valid1 = u1 > 0.0;
+		break;
+	case 2:
+		valid1 = true;
+		break;
+	}
+	var valid2;
+	var _g1 = ray2.infinite;
+	switch(_g1[1]) {
+	case 0:
+		if(u2 > 0.0) {
+			valid2 = u2 <= 1.0;
+		} else {
+			valid2 = false;
+		}
+		break;
+	case 1:
+		valid2 = u2 > 0.0;
+		break;
+	case 2:
+		valid2 = true;
+		break;
+	}
+	if(valid1 && valid2) {
+		if(into == null) {
+			into = new differ_data_RayIntersection();
+		} else {
+			into.ray1 = null;
+			into.ray2 = null;
+			into.u1 = 0.0;
+			into.u2 = 0.0;
+			into = into;
+		}
+		into.ray1 = ray1;
+		into.ray2 = ray2;
+		into.u1 = u1;
+		into.u2 = u2;
+		return into;
+	}
+	return null;
+};
+differ_sat_SAT2D.checkPolygons = function(polygon1,polygon2,into,flip) {
+	if(flip == null) {
+		flip = false;
+	}
+	into.shape1 = into.shape2 = null;
+	into.overlap = into.separationX = into.separationY = into.unitVectorX = into.unitVectorY = 0.0;
+	into.otherOverlap = into.otherSeparationX = into.otherSeparationY = into.otherUnitVectorX = into.otherUnitVectorY = 0.0;
+	var offset = 0.0;
+	var test1 = 0.0;
+	var test2 = 0.0;
+	var testNum = 0.0;
+	var min1 = 0.0;
+	var max1 = 0.0;
+	var min2 = 0.0;
+	var max2 = 0.0;
+	var closest = 1073741823;
+	var axisX = 0.0;
+	var axisY = 0.0;
+	var verts1 = polygon1.get_transformedVertices();
+	var verts2 = polygon2.get_transformedVertices();
+	var _g1 = 0;
+	var _g = verts1.length;
+	while(_g1 < _g) {
+		var i = _g1++;
+		var v2 = i >= verts1.length - 1 ? verts1[0] : verts1[i + 1];
+		axisX = -(v2.y - verts1[i].y);
+		var v21 = i >= verts1.length - 1 ? verts1[0] : verts1[i + 1];
+		axisY = v21.x - verts1[i].x;
+		var aLen = Math.sqrt(axisX * axisX + axisY * axisY);
+		var component = axisX;
+		if(aLen == 0) {
+			axisX = 0;
+		} else {
+			component /= aLen;
+			axisX = component;
+		}
+		var component1 = axisY;
+		if(aLen == 0) {
+			axisY = 0;
+		} else {
+			component1 /= aLen;
+			axisY = component1;
+		}
+		min1 = axisX * verts1[0].x + axisY * verts1[0].y;
+		max1 = min1;
+		var _g3 = 1;
+		var _g2 = verts1.length;
+		while(_g3 < _g2) {
+			var j = _g3++;
+			testNum = axisX * verts1[j].x + axisY * verts1[j].y;
+			if(testNum < min1) {
+				min1 = testNum;
+			}
+			if(testNum > max1) {
+				max1 = testNum;
+			}
+		}
+		min2 = axisX * verts2[0].x + axisY * verts2[0].y;
+		max2 = min2;
+		var _g31 = 1;
+		var _g21 = verts2.length;
+		while(_g31 < _g21) {
+			var j1 = _g31++;
+			testNum = axisX * verts2[j1].x + axisY * verts2[j1].y;
+			if(testNum < min2) {
+				min2 = testNum;
+			}
+			if(testNum > max2) {
+				max2 = testNum;
+			}
+		}
+		test1 = min1 - max2;
+		test2 = min2 - max1;
+		if(test1 > 0 || test2 > 0) {
+			return null;
+		}
+		var distMin = -(max2 - min1);
+		if(flip) {
+			distMin *= -1;
+		}
+		if(Math.abs(distMin) < closest) {
+			into.unitVectorX = axisX;
+			into.unitVectorY = axisY;
+			into.overlap = distMin;
+			closest = Math.abs(distMin);
+		}
+	}
+	into.shape1 = flip ? polygon2 : polygon1;
+	into.shape2 = flip ? polygon1 : polygon2;
+	into.separationX = -into.unitVectorX * into.overlap;
+	into.separationY = -into.unitVectorY * into.overlap;
+	if(flip) {
+		into.unitVectorX = -into.unitVectorX;
+		into.unitVectorY = -into.unitVectorY;
+	}
+	return into;
+};
+differ_sat_SAT2D.rayU = function(udelta,aX,aY,bX,bY,dX,dY) {
+	return (dX * (aY - bY) - dY * (aX - bX)) / udelta;
+};
+differ_sat_SAT2D.findNormalAxisX = function(verts,index) {
+	var v2 = index >= verts.length - 1 ? verts[0] : verts[index + 1];
+	return -(v2.y - verts[index].y);
+};
+differ_sat_SAT2D.findNormalAxisY = function(verts,index) {
+	var v2 = index >= verts.length - 1 ? verts[0] : verts[index + 1];
+	return v2.x - verts[index].x;
+};
+var differ_shapes_Shape = function(_x,_y) {
+	this._transformed = false;
+	this._scaleY = 1;
+	this._scaleX = 1;
+	this._rotation_radians = 0;
+	this._rotation = 0;
+	this.name = "shape";
+	this.active = true;
+	this.tags = new haxe_ds_StringMap();
+	this._position = new differ_math_Vector(_x,_y);
+	this._scale = new differ_math_Vector(1,1);
+	this._rotation = 0;
+	this._scaleX = 1;
+	this._scaleY = 1;
+	this._transformMatrix = new differ_math_Matrix();
+	this._transformMatrix.makeTranslation(this._position.x,this._position.y);
+};
+$hxClasses["differ.shapes.Shape"] = differ_shapes_Shape;
+differ_shapes_Shape.__name__ = ["differ","shapes","Shape"];
+differ_shapes_Shape.prototype = {
+	test: function(shape,into) {
+		return null;
+	}
+	,testCircle: function(circle,into,flip) {
+		if(flip == null) {
+			flip = false;
+		}
+		return null;
+	}
+	,testPolygon: function(polygon,into,flip) {
+		if(flip == null) {
+			flip = false;
+		}
+		return null;
+	}
+	,testRay: function(ray,into) {
+		return null;
+	}
+	,destroy: function() {
+		this._position = null;
+		this._scale = null;
+		this._transformMatrix = null;
+	}
+	,refresh_transform: function() {
+		this._transformMatrix.compose(this._position,this._rotation_radians,this._scale);
+		this._transformed = false;
+	}
+	,get_position: function() {
+		return this._position;
+	}
+	,set_position: function(v) {
+		this._position = v;
+		this.refresh_transform();
+		return this._position;
+	}
+	,get_x: function() {
+		return this._position.x;
+	}
+	,set_x: function(x) {
+		this._position.x = x;
+		this.refresh_transform();
+		return this._position.x;
+	}
+	,get_y: function() {
+		return this._position.y;
+	}
+	,set_y: function(y) {
+		this._position.y = y;
+		this.refresh_transform();
+		return this._position.y;
+	}
+	,get_rotation: function() {
+		return this._rotation;
+	}
+	,set_rotation: function(v) {
+		this._rotation_radians = v * (Math.PI / 180);
+		this.refresh_transform();
+		return this._rotation = v;
+	}
+	,get_scaleX: function() {
+		return this._scaleX;
+	}
+	,set_scaleX: function(scale) {
+		this._scaleX = scale;
+		this._scale.x = this._scaleX;
+		this.refresh_transform();
+		return this._scaleX;
+	}
+	,get_scaleY: function() {
+		return this._scaleY;
+	}
+	,set_scaleY: function(scale) {
+		this._scaleY = scale;
+		this._scale.y = this._scaleY;
+		this.refresh_transform();
+		return this._scaleY;
+	}
+	,__class__: differ_shapes_Shape
+};
+var differ_shapes_Circle = function(x,y,radius) {
+	differ_shapes_Shape.call(this,x,y);
+	this._radius = radius;
+	this.name = "circle " + this._radius;
+};
+$hxClasses["differ.shapes.Circle"] = differ_shapes_Circle;
+differ_shapes_Circle.__name__ = ["differ","shapes","Circle"];
+differ_shapes_Circle.__super__ = differ_shapes_Shape;
+differ_shapes_Circle.prototype = $extend(differ_shapes_Shape.prototype,{
+	test: function(shape,into) {
+		return shape.testCircle(this,into,true);
+	}
+	,testCircle: function(circle,into,flip) {
+		if(flip == null) {
+			flip = false;
+		}
+		return differ_sat_SAT2D.testCircleVsCircle(this,circle,into,flip);
+	}
+	,testPolygon: function(polygon,into,flip) {
+		if(flip == null) {
+			flip = false;
+		}
+		return differ_sat_SAT2D.testCircleVsPolygon(this,polygon,into,flip);
+	}
+	,testRay: function(ray,into) {
+		return differ_sat_SAT2D.testRayVsCircle(ray,this,into);
+	}
+	,get_radius: function() {
+		return this._radius;
+	}
+	,get_transformedRadius: function() {
+		return this._radius * this.get_scaleX();
+	}
+	,__class__: differ_shapes_Circle
+});
+var differ_shapes_Polygon = function(x,y,vertices) {
+	differ_shapes_Shape.call(this,x,y);
+	this.name = "polygon(sides:" + vertices.length + ")";
+	this._transformedVertices = [];
+	this._vertices = vertices;
+};
+$hxClasses["differ.shapes.Polygon"] = differ_shapes_Polygon;
+differ_shapes_Polygon.__name__ = ["differ","shapes","Polygon"];
+differ_shapes_Polygon.create = function(x,y,sides,radius) {
+	if(radius == null) {
+		radius = 100;
+	}
+	if(sides < 3) {
+		throw new js__$Boot_HaxeError("Polygon - Needs at least 3 sides");
+	}
+	var rotation = Math.PI * 2 / sides;
+	var angle;
+	var vector;
+	var vertices = [];
+	var _g1 = 0;
+	var _g = sides;
+	while(_g1 < _g) {
+		var i = _g1++;
+		angle = i * rotation + (Math.PI - rotation) * 0.5;
+		vector = new differ_math_Vector();
+		vector.x = Math.cos(angle) * radius;
+		vector.y = Math.sin(angle) * radius;
+		vertices.push(vector);
+	}
+	return new differ_shapes_Polygon(x,y,vertices);
+};
+differ_shapes_Polygon.rectangle = function(x,y,width,height,centered) {
+	if(centered == null) {
+		centered = true;
+	}
+	var vertices = [];
+	if(centered) {
+		vertices.push(new differ_math_Vector(-width / 2,-height / 2));
+		vertices.push(new differ_math_Vector(width / 2,-height / 2));
+		vertices.push(new differ_math_Vector(width / 2,height / 2));
+		vertices.push(new differ_math_Vector(-width / 2,height / 2));
+	} else {
+		vertices.push(new differ_math_Vector(0,0));
+		vertices.push(new differ_math_Vector(width,0));
+		vertices.push(new differ_math_Vector(width,height));
+		vertices.push(new differ_math_Vector(0,height));
+	}
+	return new differ_shapes_Polygon(x,y,vertices);
+};
+differ_shapes_Polygon.square = function(x,y,width,centered) {
+	if(centered == null) {
+		centered = true;
+	}
+	return differ_shapes_Polygon.rectangle(x,y,width,width,centered);
+};
+differ_shapes_Polygon.triangle = function(x,y,radius) {
+	return differ_shapes_Polygon.create(x,y,3,radius);
+};
+differ_shapes_Polygon.__super__ = differ_shapes_Shape;
+differ_shapes_Polygon.prototype = $extend(differ_shapes_Shape.prototype,{
+	test: function(shape,into) {
+		return shape.testPolygon(this,into,true);
+	}
+	,testCircle: function(circle,into,flip) {
+		if(flip == null) {
+			flip = false;
+		}
+		return differ_sat_SAT2D.testCircleVsPolygon(circle,this,into,!flip);
+	}
+	,testPolygon: function(polygon,into,flip) {
+		if(flip == null) {
+			flip = false;
+		}
+		return differ_sat_SAT2D.testPolygonVsPolygon(this,polygon,into,flip);
+	}
+	,testRay: function(ray,into) {
+		return differ_sat_SAT2D.testRayVsPolygon(ray,this,into);
+	}
+	,destroy: function() {
+		var _count = this._vertices.length;
+		var _g1 = 0;
+		var _g = _count;
+		while(_g1 < _g) {
+			var i = _g1++;
+			this._vertices[i] = null;
+		}
+		this._transformedVertices = null;
+		this._vertices = null;
+		differ_shapes_Shape.prototype.destroy.call(this);
+	}
+	,get_transformedVertices: function() {
+		if(!this._transformed) {
+			this._transformedVertices = [];
+			this._transformed = true;
+			var _count = this._vertices.length;
+			var _g1 = 0;
+			var _g = _count;
+			while(_g1 < _g) {
+				var i = _g1++;
+				var _this = this._vertices[i];
+				this._transformedVertices.push(new differ_math_Vector(_this.x,_this.y).transform(this._transformMatrix));
+			}
+		}
+		return this._transformedVertices;
+	}
+	,get_vertices: function() {
+		return this._vertices;
+	}
+	,__class__: differ_shapes_Polygon
+});
+var differ_shapes_Ray = function(_start,_end,_infinite) {
+	this.start = _start;
+	this.end = _end;
+	this.infinite = _infinite == null ? differ_shapes_InfiniteState.not_infinite : _infinite;
+	this.dir_cache = new differ_math_Vector(this.end.x - this.start.x,this.end.y - this.start.y);
+};
+$hxClasses["differ.shapes.Ray"] = differ_shapes_Ray;
+differ_shapes_Ray.__name__ = ["differ","shapes","Ray"];
+differ_shapes_Ray.prototype = {
+	get_dir: function() {
+		this.dir_cache.x = this.end.x - this.start.x;
+		this.dir_cache.y = this.end.y - this.start.y;
+		return this.dir_cache;
+	}
+	,__class__: differ_shapes_Ray
+};
+var differ_shapes_InfiniteState = $hxClasses["differ.shapes.InfiniteState"] = { __ename__ : true, __constructs__ : ["not_infinite","infinite_from_start","infinite"] };
+differ_shapes_InfiniteState.not_infinite = ["not_infinite",0];
+differ_shapes_InfiniteState.not_infinite.toString = $estr;
+differ_shapes_InfiniteState.not_infinite.__enum__ = differ_shapes_InfiniteState;
+differ_shapes_InfiniteState.infinite_from_start = ["infinite_from_start",1];
+differ_shapes_InfiniteState.infinite_from_start.toString = $estr;
+differ_shapes_InfiniteState.infinite_from_start.__enum__ = differ_shapes_InfiniteState;
+differ_shapes_InfiniteState.infinite = ["infinite",2];
+differ_shapes_InfiniteState.infinite.toString = $estr;
+differ_shapes_InfiniteState.infinite.__enum__ = differ_shapes_InfiniteState;
 var ecs_Engine = function() {
 	this.systemUpdated = this.systemUpdatedTrigger = tink_core__$Signal_Signal_$Impl_$.trigger();
 	this.updated = this.updatedTrigger = tink_core__$Signal_Signal_$Impl_$.trigger();
@@ -889,13 +2369,16 @@ ecs_node_Node0.prototype = $extend(ecs_node_TrackingNode.prototype,{
 	,__class__: ecs_node_Node0
 });
 var ecs_node_Node1 = function(entity) {
-	ecs_node_TrackingNode.call(this,entity,"TrackingNode#" + "Physical,Position");
+	ecs_node_TrackingNode.call(this,entity,"TrackingNode#" + "Position,Shape,ZonePolygon");
 	var this1 = entity.components;
-	var this2 = Type.getClassName(component_Physical);
-	this.physical = this1.get(this2);
+	var this2 = Type.getClassName(component_Position);
+	this.position = this1.get(this2);
 	var this3 = entity.components;
-	var this4 = Type.getClassName(component_Position);
-	this.position = this3.get(this4);
+	var this4 = Type.getClassName(component_Shape);
+	this.shape = this3.get(this4);
+	var this5 = entity.components;
+	var this6 = Type.getClassName(component_ZonePolygon);
+	this.zonePolygon = this5.get(this6);
 };
 $hxClasses["ecs.node.Node1"] = ecs_node_Node1;
 ecs_node_Node1.__name__ = ["ecs","node","Node1"];
@@ -904,10 +2387,72 @@ ecs_node_Node1.createNodeList = function(engine) {
 		return new ecs_node_Node1(entity);
 	},function(entity1) {
 		return entity1.hasAll(ecs_node_Node1.componentTypes);
-	},"TrackingNodeList#" + "Physical,Position");
+	},"TrackingNodeList#" + "Position,Shape,ZonePolygon");
 };
 ecs_node_Node1.__super__ = ecs_node_TrackingNode;
 ecs_node_Node1.prototype = $extend(ecs_node_TrackingNode.prototype,{
+	destroy: function() {
+		ecs_node_TrackingNode.prototype.destroy.call(this);
+		this.position = null;
+		this.shape = null;
+		this.zonePolygon = null;
+	}
+	,onComponentAdded: function(__component) {
+		var this1 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this2 = Type.getClassName(component_Position);
+		if(this1 == this2) {
+			this.position = __component;
+		}
+		var this3 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this4 = Type.getClassName(component_Shape);
+		if(this3 == this4) {
+			this.shape = __component;
+		}
+		var this5 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this6 = Type.getClassName(component_ZonePolygon);
+		if(this5 == this6) {
+			this.zonePolygon = __component;
+		}
+	}
+	,onComponentRemoved: function(__component) {
+		var this1 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this2 = Type.getClassName(component_Position);
+		if(this1 == this2) {
+			this.position = null;
+		}
+		var this3 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this4 = Type.getClassName(component_Shape);
+		if(this3 == this4) {
+			this.shape = null;
+		}
+		var this5 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this6 = Type.getClassName(component_ZonePolygon);
+		if(this5 == this6) {
+			this.zonePolygon = null;
+		}
+	}
+	,__class__: ecs_node_Node1
+});
+var ecs_node_Node2 = function(entity) {
+	ecs_node_TrackingNode.call(this,entity,"TrackingNode#" + "Physical,Position");
+	var this1 = entity.components;
+	var this2 = Type.getClassName(component_Physical);
+	this.physical = this1.get(this2);
+	var this3 = entity.components;
+	var this4 = Type.getClassName(component_Position);
+	this.position = this3.get(this4);
+};
+$hxClasses["ecs.node.Node2"] = ecs_node_Node2;
+ecs_node_Node2.__name__ = ["ecs","node","Node2"];
+ecs_node_Node2.createNodeList = function(engine) {
+	return new ecs_node_TrackingNodeList(engine,function(entity) {
+		return new ecs_node_Node2(entity);
+	},function(entity1) {
+		return entity1.hasAll(ecs_node_Node2.componentTypes);
+	},"TrackingNodeList#" + "Physical,Position");
+};
+ecs_node_Node2.__super__ = ecs_node_TrackingNode;
+ecs_node_Node2.prototype = $extend(ecs_node_TrackingNode.prototype,{
 	destroy: function() {
 		ecs_node_TrackingNode.prototype.destroy.call(this);
 		this.physical = null;
@@ -937,7 +2482,72 @@ ecs_node_Node1.prototype = $extend(ecs_node_TrackingNode.prototype,{
 			this.position = null;
 		}
 	}
-	,__class__: ecs_node_Node1
+	,__class__: ecs_node_Node2
+});
+var ecs_node_Node3 = function(entity) {
+	ecs_node_TrackingNode.call(this,entity,"TrackingNode#" + "Physical,Position,Shape");
+	var this1 = entity.components;
+	var this2 = Type.getClassName(component_Physical);
+	this.physical = this1.get(this2);
+	var this3 = entity.components;
+	var this4 = Type.getClassName(component_Position);
+	this.position = this3.get(this4);
+	var this5 = entity.components;
+	var this6 = Type.getClassName(component_Shape);
+	this.shape = this5.get(this6);
+};
+$hxClasses["ecs.node.Node3"] = ecs_node_Node3;
+ecs_node_Node3.__name__ = ["ecs","node","Node3"];
+ecs_node_Node3.createNodeList = function(engine) {
+	return new ecs_node_TrackingNodeList(engine,function(entity) {
+		return new ecs_node_Node3(entity);
+	},function(entity1) {
+		return entity1.hasAll(ecs_node_Node3.componentTypes);
+	},"TrackingNodeList#" + "Physical,Position,Shape");
+};
+ecs_node_Node3.__super__ = ecs_node_TrackingNode;
+ecs_node_Node3.prototype = $extend(ecs_node_TrackingNode.prototype,{
+	destroy: function() {
+		ecs_node_TrackingNode.prototype.destroy.call(this);
+		this.physical = null;
+		this.position = null;
+		this.shape = null;
+	}
+	,onComponentAdded: function(__component) {
+		var this1 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this2 = Type.getClassName(component_Physical);
+		if(this1 == this2) {
+			this.physical = __component;
+		}
+		var this3 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this4 = Type.getClassName(component_Position);
+		if(this3 == this4) {
+			this.position = __component;
+		}
+		var this5 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this6 = Type.getClassName(component_Shape);
+		if(this5 == this6) {
+			this.shape = __component;
+		}
+	}
+	,onComponentRemoved: function(__component) {
+		var this1 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this2 = Type.getClassName(component_Physical);
+		if(this1 == this2) {
+			this.physical = null;
+		}
+		var this3 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this4 = Type.getClassName(component_Position);
+		if(this3 == this4) {
+			this.position = null;
+		}
+		var this5 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this6 = Type.getClassName(component_Shape);
+		if(this5 == this6) {
+			this.shape = null;
+		}
+	}
+	,__class__: ecs_node_Node3
 });
 var ecs_node_NodeList = function(factory,name) {
 	this.entities = [];
@@ -1357,6 +2967,16 @@ game_Event.ZoneEnter.__enum__ = game_Event;
 game_Event.ZoneLeave = ["ZoneLeave",1];
 game_Event.ZoneLeave.toString = $estr;
 game_Event.ZoneLeave.__enum__ = game_Event;
+var game_Property = $hxClasses["game.Property"] = { __ename__ : true, __constructs__ : ["Fire","Ice","Antigravity"] };
+game_Property.Fire = ["Fire",0];
+game_Property.Fire.toString = $estr;
+game_Property.Fire.__enum__ = game_Property;
+game_Property.Ice = ["Ice",1];
+game_Property.Ice.toString = $estr;
+game_Property.Ice.__enum__ = game_Property;
+game_Property.Antigravity = ["Antigravity",2];
+game_Property.Antigravity.toString = $estr;
+game_Property.Antigravity.__enum__ = game_Property;
 var haxe_StackItem = $hxClasses["haxe.StackItem"] = { __ename__ : true, __constructs__ : ["CFunction","Module","FilePos","Method","LocalFunction"] };
 haxe_StackItem.CFunction = ["CFunction",0];
 haxe_StackItem.CFunction.toString = $estr;
@@ -14143,6 +15763,96 @@ kha_graphics2_Graphics1.prototype = {
 	}
 	,__class__: kha_graphics2_Graphics1
 };
+var kha_graphics2_GraphicsExtension = function() { };
+$hxClasses["kha.graphics2.GraphicsExtension"] = kha_graphics2_GraphicsExtension;
+kha_graphics2_GraphicsExtension.__name__ = ["kha","graphics2","GraphicsExtension"];
+kha_graphics2_GraphicsExtension.drawCircle = function(g2,cx,cy,radius,strength,segments) {
+	if(segments == null) {
+		segments = 0;
+	}
+	if(strength == null) {
+		strength = 1;
+	}
+	if(!kha_SystemImpl.gl) {
+		var g = g2;
+		radius -= strength / 2;
+		g.drawCircle(cx,cy,radius,strength);
+		return;
+	}
+	if(segments <= 0) {
+		segments = Math.floor(10 * Math.sqrt(radius));
+	}
+	var theta = 2 * Math.PI / segments;
+	var c = Math.cos(theta);
+	var s = Math.sin(theta);
+	var x = radius;
+	var y = 0.0;
+	var _g1 = 0;
+	var _g = segments;
+	while(_g1 < _g) {
+		var n = _g1++;
+		var px = x + cx;
+		var py = y + cy;
+		var t = x;
+		x = c * x - s * y;
+		y = c * y + s * t;
+		g2.drawLine(px,py,x + cx,y + cy,strength);
+	}
+};
+kha_graphics2_GraphicsExtension.fillCircle = function(g2,cx,cy,radius,segments) {
+	if(segments == null) {
+		segments = 0;
+	}
+	if(!kha_SystemImpl.gl) {
+		var g = g2;
+		g.fillCircle(cx,cy,radius);
+		return;
+	}
+	if(segments <= 0) {
+		segments = Math.floor(10 * Math.sqrt(radius));
+	}
+	var theta = 2 * Math.PI / segments;
+	var c = Math.cos(theta);
+	var s = Math.sin(theta);
+	var x = radius;
+	var y = 0.0;
+	var _g1 = 0;
+	var _g = segments;
+	while(_g1 < _g) {
+		var n = _g1++;
+		var px = x + cx;
+		var py = y + cy;
+		var t = x;
+		x = c * x - s * y;
+		y = c * y + s * t;
+		g2.fillTriangle(px,py,x + cx,y + cy,cx,cy);
+	}
+};
+kha_graphics2_GraphicsExtension.drawPolygon = function(g2,x,y,vertices,strength) {
+	if(strength == null) {
+		strength = 1;
+	}
+	var iterator = HxOverrides.iter(vertices);
+	var v0 = iterator.next();
+	var v1 = v0;
+	while(iterator.hasNext()) {
+		var v2 = iterator.next();
+		g2.drawLine(v1.x + x,v1.y + y,v2.x + x,v2.y + y,strength);
+		v1 = v2;
+	}
+	g2.drawLine(v1.x + x,v1.y + y,v0.x + x,v0.y + y,strength);
+};
+kha_graphics2_GraphicsExtension.fillPolygon = function(g2,x,y,vertices) {
+	var iterator = HxOverrides.iter(vertices);
+	var v0 = iterator.next();
+	var v1 = v0;
+	while(iterator.hasNext()) {
+		var v2 = iterator.next();
+		g2.fillTriangle(v1.x + x,v1.y + y,v2.x + x,v2.y + y,x,y);
+		v1 = v2;
+	}
+	g2.fillTriangle(v1.x + x,v1.y + y,v0.x + x,v0.y + y,x,y);
+};
 var kha_graphics2_ImageScaleQuality = $hxClasses["kha.graphics2.ImageScaleQuality"] = { __ename__ : true, __constructs__ : ["Low","High"] };
 kha_graphics2_ImageScaleQuality.Low = ["Low",0];
 kha_graphics2_ImageScaleQuality.Low.toString = $estr;
@@ -20163,7 +21873,7 @@ $hxClasses["system.ObjectRenderSystem"] = system_ObjectRenderSystem;
 system_ObjectRenderSystem.__name__ = ["system","ObjectRenderSystem"];
 system_ObjectRenderSystem.__super__ = ecs_system_System;
 system_ObjectRenderSystem.prototype = $extend(ecs_system_System.prototype,{
-	render: function(graphics) {
+	rendergraphics: function(graphics) {
 		var _g_max;
 		var _g_cur;
 		var _g_array;
@@ -20174,7 +21884,7 @@ system_ObjectRenderSystem.prototype = $extend(ecs_system_System.prototype,{
 		while(_g_cur != _g_max) {
 			var node = _g_array[_g_cur++];
 			graphics.set_color(node.renderObject.colour);
-			graphics.fillRect(node.position.position.x,node.position.position.y,15,15);
+			graphics.fillRect(node.position.position.x - 20,node.position.position.y - 20,20,20);
 			graphics.set_color(kha__$Color_Color_$Impl_$.White);
 		}
 	}
@@ -20219,13 +21929,97 @@ system_PhysicsSystem.prototype = $extend(ecs_system_System.prototype,{
 		}
 	}
 	,setNodeLists: function(engine) {
+		var this1 = Type.getClassName(ecs_node_Node2);
+		this.nodes = engine.getNodeList(this1,ecs_node_Node2.createNodeList);
+	}
+	,unsetNodeLists: function() {
+		this.nodes = null;
+	}
+	,__class__: system_PhysicsSystem
+});
+var system_ZoneBehaviourSystem = function() {
+	ecs_system_System.call(this);
+};
+$hxClasses["system.ZoneBehaviourSystem"] = system_ZoneBehaviourSystem;
+system_ZoneBehaviourSystem.__name__ = ["system","ZoneBehaviourSystem"];
+system_ZoneBehaviourSystem.__super__ = ecs_system_System;
+system_ZoneBehaviourSystem.prototype = $extend(ecs_system_System.prototype,{
+	update: function(dt) {
+		ecs_system_System.prototype.update.call(this,dt);
+		var _g_max;
+		var _g_cur;
+		var _g_array;
+		var arr = this.zones._nodes;
+		_g_cur = 0;
+		_g_max = arr.length;
+		_g_array = arr;
+		while(_g_cur != _g_max) {
+			var zone = _g_array[_g_cur++];
+			var _g_max1;
+			var _g_cur1;
+			var _g_array1;
+			var arr1 = this.objects._nodes;
+			_g_cur1 = 0;
+			_g_max1 = arr1.length;
+			_g_array1 = arr1;
+			while(_g_cur1 != _g_max1) {
+				var object = _g_array1[_g_cur1++];
+				if(zone.shape == object.shape) {
+					continue;
+				}
+				object.shape.shape.set_x(object.position.position.x);
+				object.shape.shape.set_y(object.position.position.y);
+				zone.shape.shape.set_x(zone.position.position.x);
+				zone.shape.shape.set_y(zone.position.position.y);
+				if(zone.shape.shape.test(object.shape.shape,null) != null) {
+					object.physical.velocity.x = 500;
+				}
+			}
+		}
+	}
+	,setNodeLists: function(engine) {
+		var this1 = Type.getClassName(ecs_node_Node1);
+		this.zones = engine.getNodeList(this1,ecs_node_Node1.createNodeList);
+		var this2 = Type.getClassName(ecs_node_Node3);
+		this.objects = engine.getNodeList(this2,ecs_node_Node3.createNodeList);
+	}
+	,unsetNodeLists: function() {
+		this.zones = null;
+		this.objects = null;
+	}
+	,__class__: system_ZoneBehaviourSystem
+});
+var system_ZoneRenderSystem = function() {
+	ecs_system_System.call(this);
+};
+$hxClasses["system.ZoneRenderSystem"] = system_ZoneRenderSystem;
+system_ZoneRenderSystem.__name__ = ["system","ZoneRenderSystem"];
+system_ZoneRenderSystem.__super__ = ecs_system_System;
+system_ZoneRenderSystem.prototype = $extend(ecs_system_System.prototype,{
+	rendergraphics: function(graphics) {
+		var _g_max;
+		var _g_cur;
+		var _g_array;
+		var arr = this.nodes._nodes;
+		_g_cur = 0;
+		_g_max = arr.length;
+		_g_array = arr;
+		while(_g_cur != _g_max) {
+			var node = _g_array[_g_cur++];
+			var pos = node.position.position;
+			graphics.set_color(node.zonePolygon.colour);
+			kha_graphics2_GraphicsExtension.fillPolygon(graphics,pos.x,pos.y,node.zonePolygon.vertices);
+			graphics.set_color(kha__$Color_Color_$Impl_$.White);
+		}
+	}
+	,setNodeLists: function(engine) {
 		var this1 = Type.getClassName(ecs_node_Node1);
 		this.nodes = engine.getNodeList(this1,ecs_node_Node1.createNodeList);
 	}
 	,unsetNodeLists: function() {
 		this.nodes = null;
 	}
-	,__class__: system_PhysicsSystem
+	,__class__: system_ZoneRenderSystem
 });
 var tink_core_Annex = function(target) {
 	this.target = target;
@@ -22127,6 +23921,9 @@ tink_core_SignalTrigger.prototype = {
 	}
 	,__class__: tink_core_SignalTrigger
 };
+var tink_macro_DirectType = function() { };
+$hxClasses["tink.macro.DirectType"] = tink_macro_DirectType;
+tink_macro_DirectType.__name__ = ["tink","macro","DirectType"];
 var tink_priority__$ID_ID_$Impl_$ = {};
 $hxClasses["tink.priority._ID.ID_Impl_"] = tink_priority__$ID_ID_$Impl_$;
 tink_priority__$ID_ID_$Impl_$.__name__ = ["tink","priority","_ID","ID_Impl_"];
@@ -23111,17 +24908,6 @@ tink_state__$State_SimpleState.prototype = {
 	}
 	,__class__: tink_state__$State_SimpleState
 };
-var util_Vector = function(x,y) {
-	this.y = 0.;
-	this.x = 0.;
-	this.x = x;
-	this.y = y;
-};
-$hxClasses["util.Vector"] = util_Vector;
-util_Vector.__name__ = ["util","Vector"];
-util_Vector.prototype = {
-	__class__: util_Vector
-};
 function $iterator(o) { if( o instanceof Array ) return function() { return HxOverrides.iter(o); }; return typeof(o.iterator) == 'function' ? $bind(o,o.iterator) : o.iterator; }
 var $_, $fid = 0;
 function $bind(o,m) { if( m == null ) return null; if( m.__id__ == null ) m.__id__ = $fid++; var f; if( o.hx__closures__ == null ) o.hx__closures__ = {}; else f = o.hx__closures__[m.__id__]; if( f == null ) { f = function(){ return f.method.apply(f.scope, arguments); }; f.scope = o; f.method = m; o.hx__closures__[m.__id__] = f; } return f; }
@@ -23148,6 +24934,8 @@ if(ArrayBuffer.prototype.slice == null) {
 var DataView = $global.DataView || js_html_compat_DataView;
 var Float32Array = $global.Float32Array || js_html_compat_Float32Array._new;
 var Uint8Array = $global.Uint8Array || js_html_compat_Uint8Array._new;
+differ_sat_SAT2D.tmp1 = new differ_data_ShapeCollision();
+differ_sat_SAT2D.tmp2 = new differ_data_ShapeCollision();
 ecs_entity_Entity.ids = 0;
 ecs_node_Node0.componentTypes = (function($this) {
 	var $r;
@@ -23158,9 +24946,25 @@ ecs_node_Node0.componentTypes = (function($this) {
 }(this));
 ecs_node_Node1.componentTypes = (function($this) {
 	var $r;
+	var this1 = Type.getClassName(component_Position);
+	var this2 = Type.getClassName(component_Shape);
+	var this3 = Type.getClassName(component_ZonePolygon);
+	$r = [this1,this2,this3];
+	return $r;
+}(this));
+ecs_node_Node2.componentTypes = (function($this) {
+	var $r;
 	var this1 = Type.getClassName(component_Physical);
 	var this2 = Type.getClassName(component_Position);
 	$r = [this1,this2];
+	return $r;
+}(this));
+ecs_node_Node3.componentTypes = (function($this) {
+	var $r;
+	var this1 = Type.getClassName(component_Physical);
+	var this2 = Type.getClassName(component_Position);
+	var this3 = Type.getClassName(component_Shape);
+	$r = [this1,this2,this3];
 	return $r;
 }(this));
 ecs_node_NodeList.ids = 0;
