@@ -27,7 +27,7 @@ class Game {
 
 		engine = new Engine<game.Event>();
 
-		var levelEntryPoint = {x : 40,y : 40};
+		var levelEntryPoint = {x : 40,y : 240};
 
 		var entry = new Entity();
 		entry.add(new component.Position(levelEntryPoint.x, levelEntryPoint.y));
@@ -37,18 +37,30 @@ class Game {
 		exit.add(new component.Position(400,550));
 		exit.add(new component.ExitPoint());
 
+		var antizone = new Entity();
+		antizone.add(new component.Position(440,100));
+		antizone.add(new component.Shape(new differ.shapes.Polygon(0,0,[new Vector(0,0),new Vector(0,400),new Vector(100,400), new Vector(100,0)])));
+		var zonethingy = new component.Zone();
+		zonethingy.removeEffects = [game.Property.Antigravity]; 
+		zonethingy.colour = kha.Color.fromString("#6ECFA0");
+		zonethingy.temporaryEffects = [];
+		antizone.add(zonethingy);
+
 		var zone = new Entity();
-		zone.add(new component.Position(40,100));
-		zone.add(new component.Shape(new differ.shapes.Polygon(0,0,[new Vector(0,0),new Vector(0,400),new Vector(100,400), new Vector(100,0)])));
+		zone.add(new component.Position(150,250));
+		zone.add(new component.Shape(new differ.shapes.Polygon(0,0,[new Vector(0,0),new Vector(0,100),new Vector(100,100), new Vector(100,0)])));
 		zone.add(new component.Zone());
+
 		var dot = new Entity();
 		dot.add(new component.Position(levelEntryPoint.x, levelEntryPoint.y));
-		dot.add(new component.Physical(430,-230));
+		dot.add(new component.Physical(530,-730));
 		dot.add(new component.Shape(new differ.shapes.Circle(0,0,5)));
+		dot.add(new component.Effects());
 		dot.add(new component.RenderObject(kha.Color.fromString("#2E79EE")));
 
 		engine.entities.add(entry);
 		engine.entities.add(exit);
+		engine.entities.add(antizone);
 		engine.entities.add(zone);
 		engine.entities.add(dot);
 

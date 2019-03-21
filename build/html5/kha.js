@@ -39,34 +39,44 @@ var Game = function() {
 	this.engine = new ecs_Engine();
 	var levelEntryPoint_y;
 	var levelEntryPoint_x = 40;
-	levelEntryPoint_y = 40;
+	levelEntryPoint_y = 240;
 	var entry = new ecs_entity_Entity();
 	entry.add(new component_Position(levelEntryPoint_x,levelEntryPoint_y));
 	entry.add(new component_EntryPoint());
 	var exit = new ecs_entity_Entity();
 	exit.add(new component_Position(400,550));
 	exit.add(new component_ExitPoint());
+	var antizone = new ecs_entity_Entity();
+	antizone.add(new component_Position(440,100));
+	antizone.add(new component_Shape(new differ_shapes_Polygon(0,0,[new differ_math_Vector(0,0),new differ_math_Vector(0,400),new differ_math_Vector(100,400),new differ_math_Vector(100,0)])));
+	var zonethingy = new component_Zone();
+	zonethingy.removeEffects = [game_Property.Antigravity];
+	zonethingy.colour = kha__$Color_Color_$Impl_$.fromString("#6ECFA0");
+	zonethingy.temporaryEffects = [];
+	antizone.add(zonethingy);
 	var zone = new ecs_entity_Entity();
-	zone.add(new component_Position(40,100));
-	zone.add(new component_Shape(new differ_shapes_Polygon(0,0,[new differ_math_Vector(0,0),new differ_math_Vector(0,400),new differ_math_Vector(100,400),new differ_math_Vector(100,0)])));
+	zone.add(new component_Position(150,250));
+	zone.add(new component_Shape(new differ_shapes_Polygon(0,0,[new differ_math_Vector(0,0),new differ_math_Vector(0,100),new differ_math_Vector(100,100),new differ_math_Vector(100,0)])));
 	zone.add(new component_Zone());
 	var dot = new ecs_entity_Entity();
 	dot.add(new component_Position(levelEntryPoint_x,levelEntryPoint_y));
-	dot.add(new component_Physical(430,-230));
+	dot.add(new component_Physical(530,-730));
 	dot.add(new component_Shape(new differ_shapes_Circle(0,0,5)));
+	dot.add(new component_Effects());
 	dot.add(new component_RenderObject(kha__$Color_Color_$Impl_$.fromString("#2E79EE")));
 	this.engine.entities.schedule(entry,true);
 	this.engine.entities.schedule(exit,true);
+	this.engine.entities.schedule(antizone,true);
 	this.engine.entities.schedule(zone,true);
 	this.engine.entities.schedule(dot,true);
 	this.zoneRenderSystem = new system_ZoneRenderSystem();
 	this.renderSystem = new system_ObjectRenderSystem();
 	this.entryExitRenderSystem = new system_EntryExitRenderSystem();
-	this.engine.systems.add(this.zoneRenderSystem,null,{ fileName : "Game.hx", lineNumber : 58, className : "Game", methodName : "new"});
-	this.engine.systems.add(this.entryExitRenderSystem,null,{ fileName : "Game.hx", lineNumber : 59, className : "Game", methodName : "new"});
-	this.engine.systems.add(this.renderSystem,null,{ fileName : "Game.hx", lineNumber : 60, className : "Game", methodName : "new"});
-	this.engine.systems.add(new system_PhysicsSystem(),null,{ fileName : "Game.hx", lineNumber : 61, className : "Game", methodName : "new"});
-	this.engine.systems.add(new system_ZoneBehaviourSystem(),null,{ fileName : "Game.hx", lineNumber : 62, className : "Game", methodName : "new"});
+	this.engine.systems.add(this.zoneRenderSystem,null,{ fileName : "Game.hx", lineNumber : 70, className : "Game", methodName : "new"});
+	this.engine.systems.add(this.entryExitRenderSystem,null,{ fileName : "Game.hx", lineNumber : 71, className : "Game", methodName : "new"});
+	this.engine.systems.add(this.renderSystem,null,{ fileName : "Game.hx", lineNumber : 72, className : "Game", methodName : "new"});
+	this.engine.systems.add(new system_PhysicsSystem(),null,{ fileName : "Game.hx", lineNumber : 73, className : "Game", methodName : "new"});
+	this.engine.systems.add(new system_ZoneBehaviourSystem(),null,{ fileName : "Game.hx", lineNumber : 74, className : "Game", methodName : "new"});
 	this.backbuffer = kha_Image.createRenderTarget(800,600);
 	this.zonefb = kha_Image.createRenderTarget(800,600);
 };
@@ -412,6 +422,16 @@ ecs_component_Component.prototype = {
 	}
 	,__class__: ecs_component_Component
 };
+var component_Effects = function() {
+	this.permanentEffects = [];
+	this.temporaryEffects = [];
+};
+$hxClasses["component.Effects"] = component_Effects;
+component_Effects.__name__ = ["component","Effects"];
+component_Effects.__super__ = ecs_component_Component;
+component_Effects.prototype = $extend(ecs_component_Component.prototype,{
+	__class__: component_Effects
+});
 var component_EntryPoint = function() {
 };
 $hxClasses["component.EntryPoint"] = component_EntryPoint;
@@ -429,6 +449,7 @@ component_ExitPoint.prototype = $extend(ecs_component_Component.prototype,{
 	__class__: component_ExitPoint
 });
 var component_Physical = function(x,y) {
+	this.effects = [];
 	this.gravityEnabled = true;
 	this.gravity = new kha_math_Vector2(0,70);
 	this.velocity = new kha_math_Vector2(x,y);
@@ -478,6 +499,7 @@ component_Shape.prototype = $extend(ecs_component_Component.prototype,{
 });
 var component_Zone = function() {
 	this.permanentEffects = [];
+	this.removeEffects = [];
 	this.temporaryEffects = [];
 	this.colour = kha__$Color_Color_$Impl_$.fromString("#DD6E6E");
 	this.temporaryEffects.push(game_Property.Antigravity);
@@ -2574,13 +2596,16 @@ ecs_node_Node3.prototype = $extend(ecs_node_TrackingNode.prototype,{
 	,__class__: ecs_node_Node3
 });
 var ecs_node_Node4 = function(entity) {
-	ecs_node_TrackingNode.call(this,entity,"TrackingNode#" + "Physical,Position");
+	ecs_node_TrackingNode.call(this,entity,"TrackingNode#" + "?Effects,Physical,Position");
 	var this1 = entity.components;
-	var this2 = Type.getClassName(component_Physical);
-	this.physical = this1.get(this2);
+	var this2 = Type.getClassName(component_Effects);
+	this.effects = this1.get(this2);
 	var this3 = entity.components;
-	var this4 = Type.getClassName(component_Position);
-	this.position = this3.get(this4);
+	var this4 = Type.getClassName(component_Physical);
+	this.physical = this3.get(this4);
+	var this5 = entity.components;
+	var this6 = Type.getClassName(component_Position);
+	this.position = this5.get(this6);
 };
 $hxClasses["ecs.node.Node4"] = ecs_node_Node4;
 ecs_node_Node4.__name__ = ["ecs","node","Node4"];
@@ -2589,52 +2614,66 @@ ecs_node_Node4.createNodeList = function(engine) {
 		return new ecs_node_Node4(entity);
 	},function(entity1) {
 		return entity1.hasAll(ecs_node_Node4.componentTypes);
-	},"TrackingNodeList#" + "Physical,Position");
+	},"TrackingNodeList#" + "?Effects,Physical,Position");
 };
 ecs_node_Node4.__super__ = ecs_node_TrackingNode;
 ecs_node_Node4.prototype = $extend(ecs_node_TrackingNode.prototype,{
 	destroy: function() {
 		ecs_node_TrackingNode.prototype.destroy.call(this);
+		this.effects = null;
 		this.physical = null;
 		this.position = null;
 	}
 	,onComponentAdded: function(__component) {
 		var this1 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
-		var this2 = Type.getClassName(component_Physical);
+		var this2 = Type.getClassName(component_Effects);
 		if(this1 == this2) {
-			this.physical = __component;
+			this.effects = __component;
 		}
 		var this3 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
-		var this4 = Type.getClassName(component_Position);
+		var this4 = Type.getClassName(component_Physical);
 		if(this3 == this4) {
+			this.physical = __component;
+		}
+		var this5 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this6 = Type.getClassName(component_Position);
+		if(this5 == this6) {
 			this.position = __component;
 		}
 	}
 	,onComponentRemoved: function(__component) {
 		var this1 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
-		var this2 = Type.getClassName(component_Physical);
+		var this2 = Type.getClassName(component_Effects);
 		if(this1 == this2) {
-			this.physical = null;
+			this.effects = null;
 		}
 		var this3 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
-		var this4 = Type.getClassName(component_Position);
+		var this4 = Type.getClassName(component_Physical);
 		if(this3 == this4) {
+			this.physical = null;
+		}
+		var this5 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this6 = Type.getClassName(component_Position);
+		if(this5 == this6) {
 			this.position = null;
 		}
 	}
 	,__class__: ecs_node_Node4
 });
 var ecs_node_Node5 = function(entity) {
-	ecs_node_TrackingNode.call(this,entity,"TrackingNode#" + "Physical,Position,Shape");
+	ecs_node_TrackingNode.call(this,entity,"TrackingNode#" + "Effects,Physical,Position,Shape");
 	var this1 = entity.components;
-	var this2 = Type.getClassName(component_Physical);
-	this.physical = this1.get(this2);
+	var this2 = Type.getClassName(component_Effects);
+	this.effects = this1.get(this2);
 	var this3 = entity.components;
-	var this4 = Type.getClassName(component_Position);
-	this.position = this3.get(this4);
+	var this4 = Type.getClassName(component_Physical);
+	this.physical = this3.get(this4);
 	var this5 = entity.components;
-	var this6 = Type.getClassName(component_Shape);
-	this.shape = this5.get(this6);
+	var this6 = Type.getClassName(component_Position);
+	this.position = this5.get(this6);
+	var this7 = entity.components;
+	var this8 = Type.getClassName(component_Shape);
+	this.shape = this7.get(this8);
 };
 $hxClasses["ecs.node.Node5"] = ecs_node_Node5;
 ecs_node_Node5.__name__ = ["ecs","node","Node5"];
@@ -2643,47 +2682,58 @@ ecs_node_Node5.createNodeList = function(engine) {
 		return new ecs_node_Node5(entity);
 	},function(entity1) {
 		return entity1.hasAll(ecs_node_Node5.componentTypes);
-	},"TrackingNodeList#" + "Physical,Position,Shape");
+	},"TrackingNodeList#" + "Effects,Physical,Position,Shape");
 };
 ecs_node_Node5.__super__ = ecs_node_TrackingNode;
 ecs_node_Node5.prototype = $extend(ecs_node_TrackingNode.prototype,{
 	destroy: function() {
 		ecs_node_TrackingNode.prototype.destroy.call(this);
+		this.effects = null;
 		this.physical = null;
 		this.position = null;
 		this.shape = null;
 	}
 	,onComponentAdded: function(__component) {
 		var this1 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
-		var this2 = Type.getClassName(component_Physical);
+		var this2 = Type.getClassName(component_Effects);
 		if(this1 == this2) {
-			this.physical = __component;
+			this.effects = __component;
 		}
 		var this3 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
-		var this4 = Type.getClassName(component_Position);
+		var this4 = Type.getClassName(component_Physical);
 		if(this3 == this4) {
-			this.position = __component;
+			this.physical = __component;
 		}
 		var this5 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
-		var this6 = Type.getClassName(component_Shape);
+		var this6 = Type.getClassName(component_Position);
 		if(this5 == this6) {
+			this.position = __component;
+		}
+		var this7 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this8 = Type.getClassName(component_Shape);
+		if(this7 == this8) {
 			this.shape = __component;
 		}
 	}
 	,onComponentRemoved: function(__component) {
 		var this1 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
-		var this2 = Type.getClassName(component_Physical);
+		var this2 = Type.getClassName(component_Effects);
 		if(this1 == this2) {
-			this.physical = null;
+			this.effects = null;
 		}
 		var this3 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
-		var this4 = Type.getClassName(component_Position);
+		var this4 = Type.getClassName(component_Physical);
 		if(this3 == this4) {
-			this.position = null;
+			this.physical = null;
 		}
 		var this5 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
-		var this6 = Type.getClassName(component_Shape);
+		var this6 = Type.getClassName(component_Position);
 		if(this5 == this6) {
+			this.position = null;
+		}
+		var this7 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this8 = Type.getClassName(component_Shape);
+		if(this7 == this8) {
 			this.shape = null;
 		}
 	}
@@ -22103,7 +22153,7 @@ system_PhysicsSystem.prototype = $extend(ecs_system_System.prototype,{
 			var node = _g_array[_g_cur++];
 			var pos = node.position.position;
 			var physical = node.physical;
-			if(physical.gravityEnabled) {
+			if(node.effects.temporaryEffects.indexOf(game_Property.Antigravity) == -1) {
 				physical.velocity.x += physical.gravity.x;
 				physical.velocity.y += physical.gravity.y;
 			}
@@ -22162,7 +22212,24 @@ system_ZoneBehaviourSystem.prototype = $extend(ecs_system_System.prototype,{
 				zone.shape.shape.set_y(zone.position.position.y);
 				if(zone.shape.shape.test(object.shape.shape,null) != null) {
 					this.zoneCollision(zone.zone,object);
-					object.physical.gravityEnabled = false;
+					var _g = 0;
+					var _g1 = zone.zone.temporaryEffects;
+					while(_g < _g1.length) {
+						var effect = _g1[_g];
+						++_g;
+						if(object.effects.temporaryEffects.indexOf(effect) == -1) {
+							object.effects.temporaryEffects.push(effect);
+						}
+					}
+					var _g2 = 0;
+					var _g11 = zone.zone.removeEffects;
+					while(_g2 < _g11.length) {
+						var effect1 = _g11[_g2];
+						++_g2;
+						if(object.effects.temporaryEffects.indexOf(effect1) != -1) {
+							object.effects.temporaryEffects.splice(object.effects.temporaryEffects.indexOf(effect1),1);
+						}
+					}
 				}
 			}
 		}
@@ -25167,10 +25234,11 @@ ecs_node_Node4.componentTypes = (function($this) {
 }(this));
 ecs_node_Node5.componentTypes = (function($this) {
 	var $r;
-	var this1 = Type.getClassName(component_Physical);
-	var this2 = Type.getClassName(component_Position);
-	var this3 = Type.getClassName(component_Shape);
-	$r = [this1,this2,this3];
+	var this1 = Type.getClassName(component_Effects);
+	var this2 = Type.getClassName(component_Physical);
+	var this3 = Type.getClassName(component_Position);
+	var this4 = Type.getClassName(component_Shape);
+	$r = [this1,this2,this3,this4];
 	return $r;
 }(this));
 ecs_node_NodeList.ids = 0;

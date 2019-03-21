@@ -4,7 +4,7 @@ import game.Event;
 
 class ZoneBehaviourSystem<Event> extends ecs.system.System<Event> {
 	@:nodes var zones:ecs.node.Node<component.Position, component.Zone,component.Shape>;
-	@:nodes var objects:ecs.node.Node<component.Position,component.Shape,component.Physical>;
+	@:nodes var objects:ecs.node.Node<component.Position,component.Shape,component.Physical,component.Effects>;
 
 	var factory:ecs.event.EventFactory<Event,{}>;
 
@@ -19,9 +19,16 @@ class ZoneBehaviourSystem<Event> extends ecs.system.System<Event> {
 				zone.shape.shape.y = zone.position.position.y;
 				if (differ.Collision.shapeWithShape(zone.shape.shape,object.shape.shape) != null){
 					zoneCollision(zone.zone,object);
-					object.physical.gravityEnabled = false;
+					for (effect in zone.zone.temporaryEffects)
+						if (object.effects.temporaryEffects.indexOf(effect) == -1)
+							object.effects.temporaryEffects.push(effect);
+					
+					for (effect in zone.zone.removeEffects)
+						if (object.effects.temporaryEffects.indexOf(effect) != -1)
+							object.effects.temporaryEffects.splice(object.effects.temporaryEffects.indexOf(effect),1 );
+					//object.physical.gravityEnabled = false;
 				} else {
-					// object.physical.gravityEnabled = true;
+					//object.physical.gravityEnabled = true;
 				}
 			}
 		}
