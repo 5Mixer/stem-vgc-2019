@@ -3,7 +3,7 @@ package system;
 import game.Event;
 
 class ZoneBehaviourSystem<Event> extends ecs.system.System<Event> {
-	@:nodes var zones:ecs.node.Node<component.Position, component.ZonePolygon,component.Shape>;
+	@:nodes var zones:ecs.node.Node<component.Position, component.Zone,component.Shape>;
 	@:nodes var objects:ecs.node.Node<component.Position,component.Shape,component.Physical>;
 
 	var factory:ecs.event.EventFactory<Event,{}>;
@@ -18,9 +18,14 @@ class ZoneBehaviourSystem<Event> extends ecs.system.System<Event> {
 				zone.shape.shape.x = zone.position.position.x;
 				zone.shape.shape.y = zone.position.position.y;
 				if (differ.Collision.shapeWithShape(zone.shape.shape,object.shape.shape) != null){
-					object.physical.velocity.x = 500;
+					zoneCollision(zone.zone,object);
+					object.physical.gravityEnabled = false;
+				} else {
+					// object.physical.gravityEnabled = true;
 				}
 			}
 		}
+	}
+	function zoneCollision(zone,object) {
 	}
 }

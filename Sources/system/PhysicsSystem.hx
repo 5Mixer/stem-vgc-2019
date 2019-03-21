@@ -12,9 +12,10 @@ class PhysicsSystem<Event:EnumValue> extends ecs.system.System<Event> {
 			var pos = node.position.position;
 			var physical = node.physical;
 			
-			physical.velocity.x += physical.gravity.x;
-			physical.velocity.y += physical.gravity.y;
-
+			if (physical.gravityEnabled){
+				physical.velocity.x += physical.gravity.x;
+				physical.velocity.y += physical.gravity.y;
+			}
 
 			pos.x += physical.velocity.x * dt;
 			pos.y += physical.velocity.y * dt;

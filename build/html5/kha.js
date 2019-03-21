@@ -37,23 +37,36 @@ var Game = function() {
 	kha_System.notifyOnRender($bind(this,this.render));
 	kha_Scheduler.addTimeTask($bind(this,this.update),0,0.0166666666666666664);
 	this.engine = new ecs_Engine();
+	var levelEntryPoint_y;
+	var levelEntryPoint_x = 40;
+	levelEntryPoint_y = 40;
+	var entry = new ecs_entity_Entity();
+	entry.add(new component_Position(levelEntryPoint_x,levelEntryPoint_y));
+	entry.add(new component_EntryPoint());
+	var exit = new ecs_entity_Entity();
+	exit.add(new component_Position(400,550));
+	exit.add(new component_ExitPoint());
 	var zone = new ecs_entity_Entity();
 	zone.add(new component_Position(40,100));
-	zone.add(new component_Shape(new differ_shapes_Polygon(0,0,[new differ_math_Vector(0,0),new differ_math_Vector(0,400),new differ_math_Vector(100,400)])));
-	zone.add(new component_ZonePolygon([new kha_math_Vector2(0,0),new kha_math_Vector2(0,400),new kha_math_Vector2(100,400)]));
+	zone.add(new component_Shape(new differ_shapes_Polygon(0,0,[new differ_math_Vector(0,0),new differ_math_Vector(0,400),new differ_math_Vector(100,400),new differ_math_Vector(100,0)])));
+	zone.add(new component_Zone());
 	var dot = new ecs_entity_Entity();
-	dot.add(new component_Position(0,0));
-	dot.add(new component_Physical(70,0));
+	dot.add(new component_Position(levelEntryPoint_x,levelEntryPoint_y));
+	dot.add(new component_Physical(430,-230));
 	dot.add(new component_Shape(new differ_shapes_Circle(0,0,5)));
 	dot.add(new component_RenderObject(kha__$Color_Color_$Impl_$.fromString("#2E79EE")));
+	this.engine.entities.schedule(entry,true);
+	this.engine.entities.schedule(exit,true);
 	this.engine.entities.schedule(zone,true);
 	this.engine.entities.schedule(dot,true);
 	this.zoneRenderSystem = new system_ZoneRenderSystem();
 	this.renderSystem = new system_ObjectRenderSystem();
-	this.engine.systems.add(this.zoneRenderSystem,null,{ fileName : "Game.hx", lineNumber : 45, className : "Game", methodName : "new"});
-	this.engine.systems.add(this.renderSystem,null,{ fileName : "Game.hx", lineNumber : 46, className : "Game", methodName : "new"});
-	this.engine.systems.add(new system_PhysicsSystem(),null,{ fileName : "Game.hx", lineNumber : 47, className : "Game", methodName : "new"});
-	this.engine.systems.add(new system_ZoneBehaviourSystem(),null,{ fileName : "Game.hx", lineNumber : 48, className : "Game", methodName : "new"});
+	this.entryExitRenderSystem = new system_EntryExitRenderSystem();
+	this.engine.systems.add(this.zoneRenderSystem,null,{ fileName : "Game.hx", lineNumber : 58, className : "Game", methodName : "new"});
+	this.engine.systems.add(this.entryExitRenderSystem,null,{ fileName : "Game.hx", lineNumber : 59, className : "Game", methodName : "new"});
+	this.engine.systems.add(this.renderSystem,null,{ fileName : "Game.hx", lineNumber : 60, className : "Game", methodName : "new"});
+	this.engine.systems.add(new system_PhysicsSystem(),null,{ fileName : "Game.hx", lineNumber : 61, className : "Game", methodName : "new"});
+	this.engine.systems.add(new system_ZoneBehaviourSystem(),null,{ fileName : "Game.hx", lineNumber : 62, className : "Game", methodName : "new"});
 	this.backbuffer = kha_Image.createRenderTarget(800,600);
 	this.zonefb = kha_Image.createRenderTarget(800,600);
 };
@@ -70,6 +83,7 @@ Game.prototype = {
 		this.zonefb.get_g2().end();
 		graphics.begin(true,kha__$Color_Color_$Impl_$.fromString("#E1E1DA"));
 		graphics.drawImage(this.zonefb,0,0);
+		this.entryExitRenderSystem.rendergraphics(graphics);
 		this.renderSystem.rendergraphics(graphics);
 		graphics.end();
 		framebuffer.get_g2().begin();
@@ -398,7 +412,24 @@ ecs_component_Component.prototype = {
 	}
 	,__class__: ecs_component_Component
 };
+var component_EntryPoint = function() {
+};
+$hxClasses["component.EntryPoint"] = component_EntryPoint;
+component_EntryPoint.__name__ = ["component","EntryPoint"];
+component_EntryPoint.__super__ = ecs_component_Component;
+component_EntryPoint.prototype = $extend(ecs_component_Component.prototype,{
+	__class__: component_EntryPoint
+});
+var component_ExitPoint = function() {
+};
+$hxClasses["component.ExitPoint"] = component_ExitPoint;
+component_ExitPoint.__name__ = ["component","ExitPoint"];
+component_ExitPoint.__super__ = ecs_component_Component;
+component_ExitPoint.prototype = $extend(ecs_component_Component.prototype,{
+	__class__: component_ExitPoint
+});
 var component_Physical = function(x,y) {
+	this.gravityEnabled = true;
 	this.gravity = new kha_math_Vector2(0,70);
 	this.velocity = new kha_math_Vector2(x,y);
 };
@@ -429,6 +460,15 @@ component_RenderObject.prototype = $extend(ecs_component_Component.prototype,{
 var component_Shape = function(shape) {
 	this.vertices = [];
 	this.shape = shape;
+	if(js_Boot.__instanceof(shape,differ_shapes_Polygon)) {
+		var _g = 0;
+		var _g1 = (js_Boot.__cast(this.shape , differ_shapes_Polygon)).get_transformedVertices();
+		while(_g < _g1.length) {
+			var v = _g1[_g];
+			++_g;
+			this.vertices.push(new kha_math_Vector2(v.x,v.y));
+		}
+	}
 };
 $hxClasses["component.Shape"] = component_Shape;
 component_Shape.__name__ = ["component","Shape"];
@@ -436,19 +476,17 @@ component_Shape.__super__ = ecs_component_Component;
 component_Shape.prototype = $extend(ecs_component_Component.prototype,{
 	__class__: component_Shape
 });
-var component_ZonePolygon = function(vertices) {
-	this.vertices = [];
+var component_Zone = function() {
 	this.permanentEffects = [];
 	this.temporaryEffects = [];
-	this.vertices = vertices;
 	this.colour = kha__$Color_Color_$Impl_$.fromString("#DD6E6E");
 	this.temporaryEffects.push(game_Property.Antigravity);
 };
-$hxClasses["component.ZonePolygon"] = component_ZonePolygon;
-component_ZonePolygon.__name__ = ["component","ZonePolygon"];
-component_ZonePolygon.__super__ = ecs_component_Component;
-component_ZonePolygon.prototype = $extend(ecs_component_Component.prototype,{
-	__class__: component_ZonePolygon
+$hxClasses["component.Zone"] = component_Zone;
+component_Zone.__name__ = ["component","Zone"];
+component_Zone.__super__ = ecs_component_Component;
+component_Zone.prototype = $extend(ecs_component_Component.prototype,{
+	__class__: component_Zone
 });
 var differ_Collision = function() { };
 $hxClasses["differ.Collision"] = differ_Collision;
@@ -2318,13 +2356,16 @@ ecs_node_TrackingNode.prototype = $extend(ecs_node_NodeBase.prototype,{
 	,__class__: ecs_node_TrackingNode
 });
 var ecs_node_Node0 = function(entity) {
-	ecs_node_TrackingNode.call(this,entity,"TrackingNode#" + "Position,RenderObject");
+	ecs_node_TrackingNode.call(this,entity,"TrackingNode#" + "Position,Shape,Zone");
 	var this1 = entity.components;
 	var this2 = Type.getClassName(component_Position);
 	this.position = this1.get(this2);
 	var this3 = entity.components;
-	var this4 = Type.getClassName(component_RenderObject);
-	this.renderObject = this3.get(this4);
+	var this4 = Type.getClassName(component_Shape);
+	this.shape = this3.get(this4);
+	var this5 = entity.components;
+	var this6 = Type.getClassName(component_Zone);
+	this.zone = this5.get(this6);
 };
 $hxClasses["ecs.node.Node0"] = ecs_node_Node0;
 ecs_node_Node0.__name__ = ["ecs","node","Node0"];
@@ -2333,10 +2374,72 @@ ecs_node_Node0.createNodeList = function(engine) {
 		return new ecs_node_Node0(entity);
 	},function(entity1) {
 		return entity1.hasAll(ecs_node_Node0.componentTypes);
-	},"TrackingNodeList#" + "Position,RenderObject");
+	},"TrackingNodeList#" + "Position,Shape,Zone");
 };
 ecs_node_Node0.__super__ = ecs_node_TrackingNode;
 ecs_node_Node0.prototype = $extend(ecs_node_TrackingNode.prototype,{
+	destroy: function() {
+		ecs_node_TrackingNode.prototype.destroy.call(this);
+		this.position = null;
+		this.shape = null;
+		this.zone = null;
+	}
+	,onComponentAdded: function(__component) {
+		var this1 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this2 = Type.getClassName(component_Position);
+		if(this1 == this2) {
+			this.position = __component;
+		}
+		var this3 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this4 = Type.getClassName(component_Shape);
+		if(this3 == this4) {
+			this.shape = __component;
+		}
+		var this5 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this6 = Type.getClassName(component_Zone);
+		if(this5 == this6) {
+			this.zone = __component;
+		}
+	}
+	,onComponentRemoved: function(__component) {
+		var this1 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this2 = Type.getClassName(component_Position);
+		if(this1 == this2) {
+			this.position = null;
+		}
+		var this3 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this4 = Type.getClassName(component_Shape);
+		if(this3 == this4) {
+			this.shape = null;
+		}
+		var this5 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this6 = Type.getClassName(component_Zone);
+		if(this5 == this6) {
+			this.zone = null;
+		}
+	}
+	,__class__: ecs_node_Node0
+});
+var ecs_node_Node1 = function(entity) {
+	ecs_node_TrackingNode.call(this,entity,"TrackingNode#" + "Position,RenderObject");
+	var this1 = entity.components;
+	var this2 = Type.getClassName(component_Position);
+	this.position = this1.get(this2);
+	var this3 = entity.components;
+	var this4 = Type.getClassName(component_RenderObject);
+	this.renderObject = this3.get(this4);
+};
+$hxClasses["ecs.node.Node1"] = ecs_node_Node1;
+ecs_node_Node1.__name__ = ["ecs","node","Node1"];
+ecs_node_Node1.createNodeList = function(engine) {
+	return new ecs_node_TrackingNodeList(engine,function(entity) {
+		return new ecs_node_Node1(entity);
+	},function(entity1) {
+		return entity1.hasAll(ecs_node_Node1.componentTypes);
+	},"TrackingNodeList#" + "Position,RenderObject");
+};
+ecs_node_Node1.__super__ = ecs_node_TrackingNode;
+ecs_node_Node1.prototype = $extend(ecs_node_TrackingNode.prototype,{
 	destroy: function() {
 		ecs_node_TrackingNode.prototype.destroy.call(this);
 		this.position = null;
@@ -2366,78 +2469,13 @@ ecs_node_Node0.prototype = $extend(ecs_node_TrackingNode.prototype,{
 			this.renderObject = null;
 		}
 	}
-	,__class__: ecs_node_Node0
-});
-var ecs_node_Node1 = function(entity) {
-	ecs_node_TrackingNode.call(this,entity,"TrackingNode#" + "Position,Shape,ZonePolygon");
-	var this1 = entity.components;
-	var this2 = Type.getClassName(component_Position);
-	this.position = this1.get(this2);
-	var this3 = entity.components;
-	var this4 = Type.getClassName(component_Shape);
-	this.shape = this3.get(this4);
-	var this5 = entity.components;
-	var this6 = Type.getClassName(component_ZonePolygon);
-	this.zonePolygon = this5.get(this6);
-};
-$hxClasses["ecs.node.Node1"] = ecs_node_Node1;
-ecs_node_Node1.__name__ = ["ecs","node","Node1"];
-ecs_node_Node1.createNodeList = function(engine) {
-	return new ecs_node_TrackingNodeList(engine,function(entity) {
-		return new ecs_node_Node1(entity);
-	},function(entity1) {
-		return entity1.hasAll(ecs_node_Node1.componentTypes);
-	},"TrackingNodeList#" + "Position,Shape,ZonePolygon");
-};
-ecs_node_Node1.__super__ = ecs_node_TrackingNode;
-ecs_node_Node1.prototype = $extend(ecs_node_TrackingNode.prototype,{
-	destroy: function() {
-		ecs_node_TrackingNode.prototype.destroy.call(this);
-		this.position = null;
-		this.shape = null;
-		this.zonePolygon = null;
-	}
-	,onComponentAdded: function(__component) {
-		var this1 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
-		var this2 = Type.getClassName(component_Position);
-		if(this1 == this2) {
-			this.position = __component;
-		}
-		var this3 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
-		var this4 = Type.getClassName(component_Shape);
-		if(this3 == this4) {
-			this.shape = __component;
-		}
-		var this5 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
-		var this6 = Type.getClassName(component_ZonePolygon);
-		if(this5 == this6) {
-			this.zonePolygon = __component;
-		}
-	}
-	,onComponentRemoved: function(__component) {
-		var this1 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
-		var this2 = Type.getClassName(component_Position);
-		if(this1 == this2) {
-			this.position = null;
-		}
-		var this3 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
-		var this4 = Type.getClassName(component_Shape);
-		if(this3 == this4) {
-			this.shape = null;
-		}
-		var this5 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
-		var this6 = Type.getClassName(component_ZonePolygon);
-		if(this5 == this6) {
-			this.zonePolygon = null;
-		}
-	}
 	,__class__: ecs_node_Node1
 });
 var ecs_node_Node2 = function(entity) {
-	ecs_node_TrackingNode.call(this,entity,"TrackingNode#" + "Physical,Position");
+	ecs_node_TrackingNode.call(this,entity,"TrackingNode#" + "EntryPoint,Position");
 	var this1 = entity.components;
-	var this2 = Type.getClassName(component_Physical);
-	this.physical = this1.get(this2);
+	var this2 = Type.getClassName(component_EntryPoint);
+	this.entryPoint = this1.get(this2);
 	var this3 = entity.components;
 	var this4 = Type.getClassName(component_Position);
 	this.position = this3.get(this4);
@@ -2449,10 +2487,112 @@ ecs_node_Node2.createNodeList = function(engine) {
 		return new ecs_node_Node2(entity);
 	},function(entity1) {
 		return entity1.hasAll(ecs_node_Node2.componentTypes);
-	},"TrackingNodeList#" + "Physical,Position");
+	},"TrackingNodeList#" + "EntryPoint,Position");
 };
 ecs_node_Node2.__super__ = ecs_node_TrackingNode;
 ecs_node_Node2.prototype = $extend(ecs_node_TrackingNode.prototype,{
+	destroy: function() {
+		ecs_node_TrackingNode.prototype.destroy.call(this);
+		this.entryPoint = null;
+		this.position = null;
+	}
+	,onComponentAdded: function(__component) {
+		var this1 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this2 = Type.getClassName(component_EntryPoint);
+		if(this1 == this2) {
+			this.entryPoint = __component;
+		}
+		var this3 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this4 = Type.getClassName(component_Position);
+		if(this3 == this4) {
+			this.position = __component;
+		}
+	}
+	,onComponentRemoved: function(__component) {
+		var this1 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this2 = Type.getClassName(component_EntryPoint);
+		if(this1 == this2) {
+			this.entryPoint = null;
+		}
+		var this3 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this4 = Type.getClassName(component_Position);
+		if(this3 == this4) {
+			this.position = null;
+		}
+	}
+	,__class__: ecs_node_Node2
+});
+var ecs_node_Node3 = function(entity) {
+	ecs_node_TrackingNode.call(this,entity,"TrackingNode#" + "ExitPoint,Position");
+	var this1 = entity.components;
+	var this2 = Type.getClassName(component_ExitPoint);
+	this.exitPoint = this1.get(this2);
+	var this3 = entity.components;
+	var this4 = Type.getClassName(component_Position);
+	this.position = this3.get(this4);
+};
+$hxClasses["ecs.node.Node3"] = ecs_node_Node3;
+ecs_node_Node3.__name__ = ["ecs","node","Node3"];
+ecs_node_Node3.createNodeList = function(engine) {
+	return new ecs_node_TrackingNodeList(engine,function(entity) {
+		return new ecs_node_Node3(entity);
+	},function(entity1) {
+		return entity1.hasAll(ecs_node_Node3.componentTypes);
+	},"TrackingNodeList#" + "ExitPoint,Position");
+};
+ecs_node_Node3.__super__ = ecs_node_TrackingNode;
+ecs_node_Node3.prototype = $extend(ecs_node_TrackingNode.prototype,{
+	destroy: function() {
+		ecs_node_TrackingNode.prototype.destroy.call(this);
+		this.exitPoint = null;
+		this.position = null;
+	}
+	,onComponentAdded: function(__component) {
+		var this1 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this2 = Type.getClassName(component_ExitPoint);
+		if(this1 == this2) {
+			this.exitPoint = __component;
+		}
+		var this3 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this4 = Type.getClassName(component_Position);
+		if(this3 == this4) {
+			this.position = __component;
+		}
+	}
+	,onComponentRemoved: function(__component) {
+		var this1 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this2 = Type.getClassName(component_ExitPoint);
+		if(this1 == this2) {
+			this.exitPoint = null;
+		}
+		var this3 = Type.getClassName(__component == null ? null : js_Boot.getClass(__component));
+		var this4 = Type.getClassName(component_Position);
+		if(this3 == this4) {
+			this.position = null;
+		}
+	}
+	,__class__: ecs_node_Node3
+});
+var ecs_node_Node4 = function(entity) {
+	ecs_node_TrackingNode.call(this,entity,"TrackingNode#" + "Physical,Position");
+	var this1 = entity.components;
+	var this2 = Type.getClassName(component_Physical);
+	this.physical = this1.get(this2);
+	var this3 = entity.components;
+	var this4 = Type.getClassName(component_Position);
+	this.position = this3.get(this4);
+};
+$hxClasses["ecs.node.Node4"] = ecs_node_Node4;
+ecs_node_Node4.__name__ = ["ecs","node","Node4"];
+ecs_node_Node4.createNodeList = function(engine) {
+	return new ecs_node_TrackingNodeList(engine,function(entity) {
+		return new ecs_node_Node4(entity);
+	},function(entity1) {
+		return entity1.hasAll(ecs_node_Node4.componentTypes);
+	},"TrackingNodeList#" + "Physical,Position");
+};
+ecs_node_Node4.__super__ = ecs_node_TrackingNode;
+ecs_node_Node4.prototype = $extend(ecs_node_TrackingNode.prototype,{
 	destroy: function() {
 		ecs_node_TrackingNode.prototype.destroy.call(this);
 		this.physical = null;
@@ -2482,9 +2622,9 @@ ecs_node_Node2.prototype = $extend(ecs_node_TrackingNode.prototype,{
 			this.position = null;
 		}
 	}
-	,__class__: ecs_node_Node2
+	,__class__: ecs_node_Node4
 });
-var ecs_node_Node3 = function(entity) {
+var ecs_node_Node5 = function(entity) {
 	ecs_node_TrackingNode.call(this,entity,"TrackingNode#" + "Physical,Position,Shape");
 	var this1 = entity.components;
 	var this2 = Type.getClassName(component_Physical);
@@ -2496,17 +2636,17 @@ var ecs_node_Node3 = function(entity) {
 	var this6 = Type.getClassName(component_Shape);
 	this.shape = this5.get(this6);
 };
-$hxClasses["ecs.node.Node3"] = ecs_node_Node3;
-ecs_node_Node3.__name__ = ["ecs","node","Node3"];
-ecs_node_Node3.createNodeList = function(engine) {
+$hxClasses["ecs.node.Node5"] = ecs_node_Node5;
+ecs_node_Node5.__name__ = ["ecs","node","Node5"];
+ecs_node_Node5.createNodeList = function(engine) {
 	return new ecs_node_TrackingNodeList(engine,function(entity) {
-		return new ecs_node_Node3(entity);
+		return new ecs_node_Node5(entity);
 	},function(entity1) {
-		return entity1.hasAll(ecs_node_Node3.componentTypes);
+		return entity1.hasAll(ecs_node_Node5.componentTypes);
 	},"TrackingNodeList#" + "Physical,Position,Shape");
 };
-ecs_node_Node3.__super__ = ecs_node_TrackingNode;
-ecs_node_Node3.prototype = $extend(ecs_node_TrackingNode.prototype,{
+ecs_node_Node5.__super__ = ecs_node_TrackingNode;
+ecs_node_Node5.prototype = $extend(ecs_node_TrackingNode.prototype,{
 	destroy: function() {
 		ecs_node_TrackingNode.prototype.destroy.call(this);
 		this.physical = null;
@@ -2547,7 +2687,7 @@ ecs_node_Node3.prototype = $extend(ecs_node_TrackingNode.prototype,{
 			this.shape = null;
 		}
 	}
-	,__class__: ecs_node_Node3
+	,__class__: ecs_node_Node5
 });
 var ecs_node_NodeList = function(factory,name) {
 	this.entities = [];
@@ -21866,6 +22006,53 @@ kha_simd_Float32x4.sqrt = function(t) {
 kha_simd_Float32x4.prototype = {
 	__class__: kha_simd_Float32x4
 };
+var system_EntryExitRenderSystem = function() {
+	ecs_system_System.call(this);
+};
+$hxClasses["system.EntryExitRenderSystem"] = system_EntryExitRenderSystem;
+system_EntryExitRenderSystem.__name__ = ["system","EntryExitRenderSystem"];
+system_EntryExitRenderSystem.__super__ = ecs_system_System;
+system_EntryExitRenderSystem.prototype = $extend(ecs_system_System.prototype,{
+	rendergraphics: function(graphics) {
+		var _g_max;
+		var _g_cur;
+		var _g_array;
+		var arr = this.nodesEntry._nodes;
+		_g_cur = 0;
+		_g_max = arr.length;
+		_g_array = arr;
+		while(_g_cur != _g_max) {
+			var node = _g_array[_g_cur++];
+			graphics.set_color(kha__$Color_Color_$Impl_$.Yellow);
+			graphics.fillRect(node.position.position.x - 20,node.position.position.y - 20,20,20);
+			graphics.set_color(kha__$Color_Color_$Impl_$.White);
+		}
+		var _g_max1;
+		var _g_cur1;
+		var _g_array1;
+		var arr1 = this.nodesExit._nodes;
+		_g_cur1 = 0;
+		_g_max1 = arr1.length;
+		_g_array1 = arr1;
+		while(_g_cur1 != _g_max1) {
+			var node1 = _g_array1[_g_cur1++];
+			graphics.set_color(kha__$Color_Color_$Impl_$.Orange);
+			graphics.fillRect(node1.position.position.x - 20,node1.position.position.y - 20,20,20);
+			graphics.set_color(kha__$Color_Color_$Impl_$.White);
+		}
+	}
+	,setNodeLists: function(engine) {
+		var this1 = Type.getClassName(ecs_node_Node2);
+		this.nodesEntry = engine.getNodeList(this1,ecs_node_Node2.createNodeList);
+		var this2 = Type.getClassName(ecs_node_Node3);
+		this.nodesExit = engine.getNodeList(this2,ecs_node_Node3.createNodeList);
+	}
+	,unsetNodeLists: function() {
+		this.nodesEntry = null;
+		this.nodesExit = null;
+	}
+	,__class__: system_EntryExitRenderSystem
+});
 var system_ObjectRenderSystem = function() {
 	ecs_system_System.call(this);
 };
@@ -21889,8 +22076,8 @@ system_ObjectRenderSystem.prototype = $extend(ecs_system_System.prototype,{
 		}
 	}
 	,setNodeLists: function(engine) {
-		var this1 = Type.getClassName(ecs_node_Node0);
-		this.nodes = engine.getNodeList(this1,ecs_node_Node0.createNodeList);
+		var this1 = Type.getClassName(ecs_node_Node1);
+		this.nodes = engine.getNodeList(this1,ecs_node_Node1.createNodeList);
 	}
 	,unsetNodeLists: function() {
 		this.nodes = null;
@@ -21916,8 +22103,10 @@ system_PhysicsSystem.prototype = $extend(ecs_system_System.prototype,{
 			var node = _g_array[_g_cur++];
 			var pos = node.position.position;
 			var physical = node.physical;
-			physical.velocity.x += physical.gravity.x;
-			physical.velocity.y += physical.gravity.y;
+			if(physical.gravityEnabled) {
+				physical.velocity.x += physical.gravity.x;
+				physical.velocity.y += physical.gravity.y;
+			}
 			pos.x += physical.velocity.x * dt;
 			pos.y += physical.velocity.y * dt;
 			if(pos.y > 585) {
@@ -21929,8 +22118,8 @@ system_PhysicsSystem.prototype = $extend(ecs_system_System.prototype,{
 		}
 	}
 	,setNodeLists: function(engine) {
-		var this1 = Type.getClassName(ecs_node_Node2);
-		this.nodes = engine.getNodeList(this1,ecs_node_Node2.createNodeList);
+		var this1 = Type.getClassName(ecs_node_Node4);
+		this.nodes = engine.getNodeList(this1,ecs_node_Node4.createNodeList);
 	}
 	,unsetNodeLists: function() {
 		this.nodes = null;
@@ -21972,16 +22161,19 @@ system_ZoneBehaviourSystem.prototype = $extend(ecs_system_System.prototype,{
 				zone.shape.shape.set_x(zone.position.position.x);
 				zone.shape.shape.set_y(zone.position.position.y);
 				if(zone.shape.shape.test(object.shape.shape,null) != null) {
-					object.physical.velocity.x = 500;
+					this.zoneCollision(zone.zone,object);
+					object.physical.gravityEnabled = false;
 				}
 			}
 		}
 	}
+	,zoneCollision: function(zone,object) {
+	}
 	,setNodeLists: function(engine) {
-		var this1 = Type.getClassName(ecs_node_Node1);
-		this.zones = engine.getNodeList(this1,ecs_node_Node1.createNodeList);
-		var this2 = Type.getClassName(ecs_node_Node3);
-		this.objects = engine.getNodeList(this2,ecs_node_Node3.createNodeList);
+		var this1 = Type.getClassName(ecs_node_Node0);
+		this.zones = engine.getNodeList(this1,ecs_node_Node0.createNodeList);
+		var this2 = Type.getClassName(ecs_node_Node5);
+		this.objects = engine.getNodeList(this2,ecs_node_Node5.createNodeList);
 	}
 	,unsetNodeLists: function() {
 		this.zones = null;
@@ -22007,14 +22199,14 @@ system_ZoneRenderSystem.prototype = $extend(ecs_system_System.prototype,{
 		while(_g_cur != _g_max) {
 			var node = _g_array[_g_cur++];
 			var pos = node.position.position;
-			graphics.set_color(node.zonePolygon.colour);
-			kha_graphics2_GraphicsExtension.fillPolygon(graphics,pos.x,pos.y,node.zonePolygon.vertices);
+			graphics.set_color(node.zone.colour);
+			kha_graphics2_GraphicsExtension.fillPolygon(graphics,pos.x,pos.y,node.shape.vertices);
 			graphics.set_color(kha__$Color_Color_$Impl_$.White);
 		}
 	}
 	,setNodeLists: function(engine) {
-		var this1 = Type.getClassName(ecs_node_Node1);
-		this.nodes = engine.getNodeList(this1,ecs_node_Node1.createNodeList);
+		var this1 = Type.getClassName(ecs_node_Node0);
+		this.nodes = engine.getNodeList(this1,ecs_node_Node0.createNodeList);
 	}
 	,unsetNodeLists: function() {
 		this.nodes = null;
@@ -24940,26 +25132,40 @@ ecs_entity_Entity.ids = 0;
 ecs_node_Node0.componentTypes = (function($this) {
 	var $r;
 	var this1 = Type.getClassName(component_Position);
-	var this2 = Type.getClassName(component_RenderObject);
-	$r = [this1,this2];
+	var this2 = Type.getClassName(component_Shape);
+	var this3 = Type.getClassName(component_Zone);
+	$r = [this1,this2,this3];
 	return $r;
 }(this));
 ecs_node_Node1.componentTypes = (function($this) {
 	var $r;
 	var this1 = Type.getClassName(component_Position);
-	var this2 = Type.getClassName(component_Shape);
-	var this3 = Type.getClassName(component_ZonePolygon);
-	$r = [this1,this2,this3];
+	var this2 = Type.getClassName(component_RenderObject);
+	$r = [this1,this2];
 	return $r;
 }(this));
 ecs_node_Node2.componentTypes = (function($this) {
+	var $r;
+	var this1 = Type.getClassName(component_EntryPoint);
+	var this2 = Type.getClassName(component_Position);
+	$r = [this1,this2];
+	return $r;
+}(this));
+ecs_node_Node3.componentTypes = (function($this) {
+	var $r;
+	var this1 = Type.getClassName(component_ExitPoint);
+	var this2 = Type.getClassName(component_Position);
+	$r = [this1,this2];
+	return $r;
+}(this));
+ecs_node_Node4.componentTypes = (function($this) {
 	var $r;
 	var this1 = Type.getClassName(component_Physical);
 	var this2 = Type.getClassName(component_Position);
 	$r = [this1,this2];
 	return $r;
 }(this));
-ecs_node_Node3.componentTypes = (function($this) {
+ecs_node_Node5.componentTypes = (function($this) {
 	var $r;
 	var this1 = Type.getClassName(component_Physical);
 	var this2 = Type.getClassName(component_Position);
